@@ -397,7 +397,7 @@ class MainActivity : ComponentActivity(), LocationListener {
         // If found by any method, save both to service and SharedPreferences
         if (foundCustomerId != null) {
             // Set the customer ID in the service
-            CookieSenderService.setCustomerId(foundCustomerId)
+            CookieSenderService.setUserId(foundCustomerId)
 
             // And save to SharedPreferences for persistence across app restarts
             val prefs = getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)

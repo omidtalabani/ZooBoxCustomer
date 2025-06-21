@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.zoobox.customer.ui.theme.ZooBoxHeroTheme
+import com.zoobox.customer.ui.theme.ZooBoxCustomerTheme
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
@@ -207,7 +207,7 @@ class PermissionActivity : ComponentActivity() {
         initializePermissionSteps()
 
         setContent {
-            ZooBoxHeroTheme {
+            ZooBoxCustomerTheme {
                 if (showWelcomeScreen) {
                     // Show welcome screen only when needed
                     WelcomeScreen(
