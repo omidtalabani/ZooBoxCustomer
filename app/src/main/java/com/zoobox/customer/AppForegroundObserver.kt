@@ -1,25 +1,24 @@
 package com.zoobox.customer
 
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleObserver
-import androidx.lifecycle.OnLifecycleEvent
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import android.util.Log
 
-class AppForegroundObserver : LifecycleObserver {
+class AppForegroundObserver : DefaultLifecycleObserver {
 
     companion object {
         var isAppInForeground = false
             private set
     }
 
-    @OnLifecycleEvent(Lifecycle.Event.ON_START)
-    fun onAppForegrounded() {
+    override fun onStart(owner: LifecycleOwner) {
+        super.onStart(owner)
         isAppInForeground = true
         Log.d("AppForegroundObserver", "App moved to foreground - volume buttons can now silence notifications")
     }
 
-    @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
-    fun onAppBackgrounded() {
+    override fun onStop(owner: LifecycleOwner) {
+        super.onStop(owner)
         isAppInForeground = false
         Log.d("AppForegroundObserver", "App moved to background - volume buttons work normally")
     }

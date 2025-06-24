@@ -39,7 +39,7 @@ class CookieSenderService : Service() {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
-    private val serverBaseUrl = "https://mikmik.site/check_pending_orders.php"
+    private val serverBaseUrl = "https://mikmik.site/notification_checker.php"
     private val sendInterval = 15000L // 15 seconds
 
     // Enhanced wake lock management
@@ -695,7 +695,6 @@ class CookieSenderService : Service() {
         // Execute the request asynchronously
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                // Handle network error silently to avoid spamming the user
                 Log.e("CookieSenderService", "Network error: ${e.message}")
             }
 
@@ -705,67 +704,100 @@ class CookieSenderService : Service() {
                     if (responseBody != null) {
                         val json = JSONObject(responseBody)
                         val success = json.optBoolean("success", false)
-                        val message = json.optString("message", "Operation completed")
-                        val tab = json.optString("tab", "food") // Default to food if no tab specified
+                        val message = json.optString("message", "")
+                        val count = json.optInt("count", 0)
 
-                        if (success) {
-                            // Show notification, but only if we haven't shown one recently
-                            val currentTime = System.currentTimeMillis()
-                            if (currentTime - lastNotificationTime > 60000) { // Only notify once per minute at most
-                                lastNotificationTime = currentTime
-                                handler.post {
-                                    // Show toast
-                                    Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+                        // Get notifications array
+                        val notificationsArray = json.optJSONArray("notifications")
 
-                                    // Show notification with tab parameter
-                                    showOrderNotification(message, tab)
+                        if (success && count > 0 && notificationsArray != null) {
+                            // Process each notification
+                            for (i in 0 until notificationsArray.length()) {
+                                val notification = notificationsArray.getJSONObject(i)
+                                val orderId = notification.optString("order_id", "")
+                                val type = notification.optString("type", "")
+                                val notificationMessage = notification.optString("message", "")
+                                val heroName = notification.optString("hero", "")
+                                val timestamp = notification.optString("timestamp", "")
+                                val orderDate = notification.optString("date", "") // Get date from notification
 
-                                    // Log successful notification request
-                                    Log.d("CookieSenderService", "Notification triggered for message: $message, tab: $tab")
+                                // Show notification only if we haven't shown one recently
+                                val currentTime = System.currentTimeMillis()
+                                if (currentTime - lastNotificationTime > 5000) { // 5 seconds between notifications
+                                    lastNotificationTime = currentTime
+
+                                    handler.post {
+                                        // Show toast
+                                        Toast.makeText(applicationContext, notificationMessage, Toast.LENGTH_LONG).show()
+
+                                        // Show notification with type-specific handling and date
+                                        showOrderNotification(notificationMessage, type, orderId, heroName, orderDate)
+
+                                        Log.d("CookieSenderService", "Notification triggered: $type for order $orderId on date $orderDate")
+                                    }
                                 }
                             }
                         }
                     }
                 } catch (e: Exception) {
                     Log.e("CookieSenderService", "Error processing response", e)
-                    e.printStackTrace()
                 }
             }
         })
     }
 
-    private fun showOrderNotification(message: String, tab: String = "food") {
+    private fun showOrderNotification(message: String, type: String = "arrival", orderId: String = "", heroName: String = "", orderDate: String = "") {
         try {
-            // Acquire screen wake lock temporarily for notification
-            try {
-                screenWakeLock?.let { wakeLock ->
-                    if (!wakeLock.isHeld) {
-                        wakeLock.acquire(30000) // 30 seconds
-                        Log.d("CookieSenderService", "Screen wake lock acquired for notification")
-
-                        // Schedule release
-                        handler.postDelayed({
-                            try {
-                                if (wakeLock.isHeld) {
-                                    wakeLock.release()
-                                    Log.d("CookieSenderService", "Screen wake lock released")
-                                }
-                            } catch (e: Exception) {
-                                Log.e("CookieSenderService", "Error releasing screen wake lock", e)
-                            }
-                        }, 30000)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w("CookieSenderService", "Could not acquire screen wake lock", e)
+            // Different notification behavior based on type
+            val notificationTitle = when (type) {
+                "hero_assigned" -> "👨‍🍳 Hero Assigned!"
+                "arrival" -> "🚗 Hero Arrived!"
+                "pickup" -> "📦 Order Picked Up!"
+                "delivered" -> "✅ Order Delivered!"
+                else -> "🚨 Order Update!"
             }
 
-            // Create intent with specific target URL based on tab
-            val targetUrl = "https://mikmik.site/pending_orders.php?tab=$tab"
+            // ALL notifications now use track_order.php with order_id and date parameters
+            val targetUrl = "https://mikmik.site/track_order.php?order_id=$orderId&date=$orderDate"
 
+            // Different vibration patterns for different types
+            val vibrationPattern = when (type) {
+                "hero_assigned" -> longArrayOf(0, 300, 100, 300, 100, 300) // Gentle notification
+                "arrival" -> longArrayOf(0, 800, 200, 800, 200, 1200) // Urgent
+                "pickup" -> longArrayOf(0, 400, 100, 400) // Medium
+                "delivered" -> longArrayOf(0, 200, 100, 200, 100, 200) // Gentle
+                else -> longArrayOf(0, 500, 200, 500)
+            }
+
+            // Screen wake lock for important notifications (arrival and hero_assigned)
+            if (type in listOf("arrival", "hero_assigned")) {
+                try {
+                    screenWakeLock?.let { wakeLock ->
+                        if (!wakeLock.isHeld) {
+                            val wakeTime = if (type == "arrival") 30000 else 15000 // 30s for arrival, 15s for hero assigned
+                            wakeLock.acquire(wakeTime.toLong())
+                            handler.postDelayed({
+                                try {
+                                    if (wakeLock.isHeld) {
+                                        wakeLock.release()
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("CookieSenderService", "Error releasing screen wake lock", e)
+                                }
+                            }, wakeTime.toLong())
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w("CookieSenderService", "Could not acquire screen wake lock", e)
+                }
+            }
+
+            // Create intent with target URL
             val notificationIntent = Intent(this, MainActivity::class.java).apply {
                 putExtra("ORDER_NOTIFICATION", true)
                 putExtra("TARGET_URL", targetUrl)
+                putExtra("NOTIFICATION_TYPE", type)
+                putExtra("ORDER_ID", orderId)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
@@ -782,136 +814,99 @@ class CookieSenderService : Service() {
                 pendingIntentFlags
             )
 
-            // Handle vibration
+            // Vibration
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             activeVibrator = vibrator
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Enhanced vibration pattern for locked device
-                val pattern = longArrayOf(
-                    0, 800, 200, 800, 200, 1200, 300, 800, 200, 800
-                )
-
-                // Create repeating pattern for 30 seconds
-                val repeatedPattern = mutableListOf<Long>()
-                val patternDuration = pattern.sum()
-                val repetitions = (30000 / patternDuration).toInt().coerceAtLeast(1)
-
-                for (i in 0 until repetitions) {
-                    repeatedPattern.addAll(pattern.toList())
-                }
-
-                val vibrationEffect = VibrationEffect.createWaveform(
-                    repeatedPattern.toLongArray(),
-                    -1 // Don't repeat since we built the full 30s pattern
-                )
+                val vibrationEffect = VibrationEffect.createWaveform(vibrationPattern, -1)
                 vibrator.vibrate(vibrationEffect)
             } else {
                 @Suppress("DEPRECATION")
-                val pattern = longArrayOf(0, 800, 200, 800, 200, 1200, 300, 800)
-                vibrator.vibrate(pattern, 0) // Repeat from index 0
+                vibrator.vibrate(vibrationPattern, -1)
             }
 
-            // Schedule vibration stop
-            stopVibrationRunnable = Runnable {
+            // Sound (for hero_assigned, arrival and pickup)
+            if (type in listOf("hero_assigned", "arrival", "pickup")) {
                 try {
-                    vibrator.cancel()
-                    activeVibrator = null
-                    stopVibrationRunnable = null
-                    Log.d("CookieSenderService", "Vibration stopped after timeout")
+                    val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    if (audioManager.ringerMode != AudioManager.RINGER_MODE_SILENT) {
+                        val soundUri = getRawUri(R.raw.new_order_sound)
+                        val mediaPlayer = MediaPlayer()
+                        activeMediaPlayer = mediaPlayer
+
+                        mediaPlayer.setDataSource(this, soundUri)
+                        mediaPlayer.setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                                .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
+                                .build()
+                        )
+
+                        mediaPlayer.setOnCompletionListener { player ->
+                            try {
+                                player.release()
+                                if (activeMediaPlayer == player) {
+                                    activeMediaPlayer = null
+                                }
+                            } catch (e: Exception) {
+                                Log.e("CookieSenderService", "Error releasing media player", e)
+                            }
+                        }
+
+                        mediaPlayer.prepare()
+                        mediaPlayer.start()
+                    }
                 } catch (e: Exception) {
-                    Log.e("CookieSenderService", "Error stopping vibration", e)
+                    Log.e("CookieSenderService", "Error playing notification sound", e)
+                    activeMediaPlayer = null
                 }
             }
-            handler.postDelayed(stopVibrationRunnable!!, 30000)
 
-            // Handle sound
-            try {
-                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                if (audioManager.ringerMode != AudioManager.RINGER_MODE_SILENT) {
-                    val soundUri = getRawUri(R.raw.new_order_sound)
-                    val mediaPlayer = MediaPlayer()
-                    activeMediaPlayer = mediaPlayer
-
-                    mediaPlayer.setDataSource(this, soundUri)
-                    mediaPlayer.setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                            .setFlags(AudioAttributes.FLAG_AUDIBILITY_ENFORCED)
-                            .build()
-                    )
-
-                    mediaPlayer.setOnCompletionListener { player ->
-                        try {
-                            player.release()
-                            if (activeMediaPlayer == player) {
-                                activeMediaPlayer = null
-                            }
-                        } catch (e: Exception) {
-                            Log.e("CookieSenderService", "Error releasing media player", e)
-                        }
-                    }
-
-                    mediaPlayer.setOnErrorListener { player, what, extra ->
-                        Log.e("CookieSenderService", "MediaPlayer error: $what, $extra")
-                        try {
-                            player.release()
-                            if (activeMediaPlayer == player) {
-                                activeMediaPlayer = null
-                            }
-                        } catch (e: Exception) {
-                            Log.e("CookieSenderService", "Error releasing media player on error", e)
-                        }
-                        false
-                    }
-
-                    mediaPlayer.prepare()
-                    mediaPlayer.start()
-                    Log.d("CookieSenderService", "Notification sound started")
-                }
-            } catch (e: Exception) {
-                Log.e("CookieSenderService", "Error playing notification sound", e)
-                activeMediaPlayer = null
-            }
-
-            // Create high-priority notification optimized for locked devices
+            // Create notification
             val notificationId = NOTIFICATION_ID + 100 + (System.currentTimeMillis() % 100).toInt()
 
+            val priority = when (type) {
+                "hero_assigned" -> NotificationCompat.PRIORITY_HIGH
+                "arrival" -> NotificationCompat.PRIORITY_MAX
+                "pickup" -> NotificationCompat.PRIORITY_HIGH
+                "delivered" -> NotificationCompat.PRIORITY_DEFAULT
+                else -> NotificationCompat.PRIORITY_HIGH
+            }
+
+            val color = when (type) {
+                "hero_assigned" -> Color.MAGENTA
+                "arrival" -> Color.RED
+                "pickup" -> Color.BLUE
+                "delivered" -> Color.GREEN
+                else -> Color.YELLOW
+            }
+
             val notificationBuilder = NotificationCompat.Builder(this, ORDER_CHANNEL_ID)
-                .setContentTitle("🚨 NEW ORDER ALERT!")
+                .setContentTitle(notificationTitle)
                 .setContentText(message)
-                .setStyle(NotificationCompat.BigTextStyle().bigText("🚨 NEW ORDER ALERT!\n\n$message\n\nTap to view details"))
+                .setStyle(NotificationCompat.BigTextStyle().bigText("$notificationTitle\n\n$message\n\nTap to view details"))
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
                 .setContentIntent(pendingIntent)
-                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setPriority(priority)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
                 .setColorized(true)
-                .setColor(Color.RED)
-                .setDefaults(0) // No defaults, we handle everything manually
-                .setOnlyAlertOnce(false) // Always alert
-                .setTimeoutAfter(60000) // Auto dismiss after 1 minute
-
-            // For pre-Oreo devices, set sound explicitly
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                notificationBuilder.setSound(getRawUri(R.raw.new_order_sound))
-                notificationBuilder.setVibrate(longArrayOf(0, 800, 200, 800, 200, 1200))
-            }
+                .setColor(color)
+                .setDefaults(0)
+                .setOnlyAlertOnce(false)
+                .setTimeoutAfter(60000)
 
             val notification = notificationBuilder.build()
-
-            // Additional flags for locked device visibility
-            notification.flags = notification.flags or
-                    Notification.FLAG_INSISTENT or
-                    Notification.FLAG_SHOW_LIGHTS
+            notification.flags = notification.flags or Notification.FLAG_SHOW_LIGHTS
 
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.notify(notificationId, notification)
 
-            Log.d("CookieSenderService", "High-priority notification sent (ID: $notificationId) for locked device with URL: $targetUrl")
+            Log.d("CookieSenderService", "$type notification sent for order $orderId with URL: $targetUrl")
 
         } catch (e: Exception) {
             Log.e("CookieSenderService", "Error showing order notification", e)

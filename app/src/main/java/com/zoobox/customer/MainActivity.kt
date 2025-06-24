@@ -367,8 +367,8 @@ class MainActivity : ComponentActivity(), LocationListener {
 
     // Method to start background service
     private fun startBackgroundService() {
-        // First try to get customer_id from WebView cookies
-        var foundCustomerId: String? = null
+        // First try to get user_id from WebView cookies
+        var foundUserId: String? = null
 
         // Method 1: Get from WebView reference
         webViewReference?.let { webView ->
@@ -378,9 +378,9 @@ class MainActivity : ComponentActivity(), LocationListener {
             if (cookies != null) {
                 for (cookie in cookies.split(";")) {
                     val trimmedCookie = cookie.trim()
-                    if (trimmedCookie.startsWith("customer_id=")) {
-                        foundCustomerId = trimmedCookie.substring("customer_id=".length)
-                        Log.d("MainActivity", "Found customer_id from WebView cookies: $foundCustomerId")
+                    if (trimmedCookie.startsWith("user_id=")) {
+                        foundUserId = trimmedCookie.substring("user_id=".length)
+                        Log.d("MainActivity", "Found user_id from WebView cookies: $foundUserId")
                         break
                     }
                 }
@@ -388,24 +388,24 @@ class MainActivity : ComponentActivity(), LocationListener {
         }
 
         // Method 2: If not found in WebView, try to get from SharedPreferences
-        if (foundCustomerId == null) {
+        if (foundUserId == null) {
             val prefs = getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
-            foundCustomerId = prefs.getString("customer_id", null)
-            Log.d("MainActivity", "Retrieved customer_id from SharedPreferences: $foundCustomerId")
+            foundUserId = prefs.getString("user_id", null)
+            Log.d("MainActivity", "Retrieved user_id from SharedPreferences: $foundUserId")
         }
 
         // If found by any method, save both to service and SharedPreferences
-        if (foundCustomerId != null) {
-            // Set the customer ID in the service
-            CookieSenderService.setUserId(foundCustomerId)
+        if (foundUserId != null) {
+            // Set the user ID in the service
+            CookieSenderService.setUserId(foundUserId)
 
             // And save to SharedPreferences for persistence across app restarts
             val prefs = getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
-            prefs.edit().putString("customer_id", foundCustomerId).apply()
+            prefs.edit().putString("user_id", foundUserId).apply()
 
-            Log.d("MainActivity", "Customer ID saved to service and preferences: $foundCustomerId")
+            Log.d("MainActivity", "User ID saved to service and preferences: $foundUserId")
         } else {
-            Log.e("MainActivity", "Could not find customer_id in cookies or SharedPreferences")
+            Log.e("MainActivity", "Could not find user_id in cookies or SharedPreferences")
         }
 
         // Start the background service
@@ -430,13 +430,13 @@ class MainActivity : ComponentActivity(), LocationListener {
                 val prefs = getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
                 prefs.edit().putString("saved_cookies", cookies).apply()
 
-                // Also extract and save customer_id separately
+                // Also extract and save user_id separately
                 for (cookie in cookies.split(";")) {
                     val trimmedCookie = cookie.trim()
-                    if (trimmedCookie.startsWith("customer_id=")) {
-                        val customerId = trimmedCookie.substring("customer_id=".length)
-                        prefs.edit().putString("customer_id", customerId).apply()
-                        Log.d("MainActivity", "Saved customer_id to preferences: $customerId")
+                    if (trimmedCookie.startsWith("user_id=")) {
+                        val userId = trimmedCookie.substring("user_id=".length)
+                        prefs.edit().putString("user_id", userId).apply()
+                        Log.d("MainActivity", "Saved user_id to preferences: $userId")
                         break
                     }
                 }
