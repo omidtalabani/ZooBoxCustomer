@@ -79,6 +79,7 @@ class CookieSenderService : Service() {
         // Method to cache user ID from MainActivity
         fun setUserId(id: String?) {
             userId = id
+            Log.d("CookieSenderService", "Static userId set to: $id")
         }
 
         // Check if service is running
@@ -128,6 +129,9 @@ class CookieSenderService : Service() {
             // Mark service as active
             isServiceRunning = true
 
+            // Debug user ID retrieval
+            debugUserIdRetrieval()
+
             val cachedUserId = userId
 
             if (cachedUserId != null) {
@@ -136,6 +140,7 @@ class CookieSenderService : Service() {
                 // Store user ID in shared preferences for recovery
                 val prefs = applicationContext.getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
                 prefs.edit().putString("user_id", cachedUserId).apply()
+                Log.d("CookieSenderService", "User ID stored in preferences: $cachedUserId")
             } else {
                 // If no cached user ID, try to get it from cookies
                 val newUserId = getUserIdCookie()
@@ -146,6 +151,12 @@ class CookieSenderService : Service() {
                     // Store user ID in shared preferences for recovery
                     val prefs = applicationContext.getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
                     prefs.edit().putString("user_id", newUserId).apply()
+                    Log.d("CookieSenderService", "New user ID found and stored: $newUserId")
+
+                    // Update notification to show "Connected"
+                    updateNotificationStatus()
+                } else {
+                    Log.w("CookieSenderService", "No user ID available from any source")
                 }
             }
 
@@ -166,6 +177,46 @@ class CookieSenderService : Service() {
                     triggerImmediateRestart()
                 }
             }, sendInterval + 10000) // 10 seconds after main check
+        }
+    }
+
+    // Enhanced debugging method for user ID retrieval
+    private fun debugUserIdRetrieval() {
+        Log.d("CookieSenderService", "=== USER ID DEBUG START ===")
+        Log.d("CookieSenderService", "Static userId: $userId")
+
+        // Check cookies
+        val cookieUserId = getUserIdCookie()
+        Log.d("CookieSenderService", "Cookie userId: $cookieUserId")
+
+        // Check SharedPreferences
+        val prefs = applicationContext.getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
+        val prefsUserId = prefs.getString("user_id", null)
+        Log.d("CookieSenderService", "SharedPrefs userId: $prefsUserId")
+
+        // Check all cookies for debugging
+        try {
+            val cookieManager = CookieManager.getInstance()
+            val allCookies = cookieManager.getCookie("https://mikmik.site")
+            Log.d("CookieSenderService", "All cookies for mikmik.site: $allCookies")
+        } catch (e: Exception) {
+            Log.e("CookieSenderService", "Error getting all cookies", e)
+        }
+
+        Log.d("CookieSenderService", "=== USER ID DEBUG END ===")
+    }
+
+    // Method to update notification when user ID becomes available
+    private fun updateNotificationStatus() {
+        if (isServiceRunning) {
+            try {
+                val notification = createNotification()
+                val notificationManager = getSystemService(NotificationManager::class.java)
+                notificationManager.notify(NOTIFICATION_ID, notification)
+                Log.d("CookieSenderService", "Notification updated - Connected: ${userId != null}")
+            } catch (e: Exception) {
+                Log.e("CookieSenderService", "Error updating notification", e)
+            }
         }
     }
 
@@ -464,19 +515,12 @@ class CookieSenderService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         isServiceRunning = true
 
+        // Enhanced user ID recovery with multiple methods
+        recoverUserId()
+
         // Start as a foreground service with notification
         startForeground(NOTIFICATION_ID, createNotification())
         Log.d("CookieSenderService", "Service started in foreground (restart count: $restartCount)")
-
-        // Try to recover user ID from shared preferences if needed
-        if (userId == null) {
-            val prefs = applicationContext.getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
-            val savedUserId = prefs.getString("user_id", null)
-            if (savedUserId != null) {
-                Log.d("CookieSenderService", "Recovered user ID from preferences: $savedUserId")
-                userId = savedUserId
-            }
-        }
 
         // Start checking for orders
         handler.removeCallbacks(checkOrdersRunnable) // Remove any existing callbacks
@@ -484,6 +528,43 @@ class CookieSenderService : Service() {
 
         // If service is killed by system, restart it with sticky behavior
         return START_STICKY
+    }
+
+    // Enhanced user ID recovery method
+    private fun recoverUserId() {
+        Log.d("CookieSenderService", "Starting user ID recovery process...")
+
+        if (userId == null) {
+            // Method 1: Try SharedPreferences first
+            val prefs = applicationContext.getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
+            val savedUserId = prefs.getString("user_id", null)
+
+            if (savedUserId != null && savedUserId.isNotEmpty()) {
+                userId = savedUserId
+                Log.d("CookieSenderService", "Recovered user ID from SharedPreferences: $savedUserId")
+
+                // Update notification immediately
+                updateNotificationStatus()
+                return
+            }
+
+            // Method 2: Try cookies if SharedPreferences didn't work
+            val cookieUserId = getUserIdCookie()
+            if (cookieUserId != null && cookieUserId.isNotEmpty()) {
+                userId = cookieUserId
+                // Save to SharedPreferences for future recovery
+                prefs.edit().putString("user_id", cookieUserId).apply()
+                Log.d("CookieSenderService", "Recovered user ID from cookies: $cookieUserId")
+
+                // Update notification immediately
+                updateNotificationStatus()
+                return
+            }
+
+            Log.w("CookieSenderService", "Could not recover user ID from any source")
+        } else {
+            Log.d("CookieSenderService", "User ID already available: $userId")
+        }
     }
 
     private fun createNotification(): Notification {
@@ -497,9 +578,17 @@ class CookieSenderService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        // Determine connection status more accurately
+        val connectionStatus = when {
+            userId != null && userId!!.isNotEmpty() -> "Connected"
+            else -> "Connecting"
+        }
+
+        Log.d("CookieSenderService", "Creating notification with status: $connectionStatus (userId: $userId)")
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("ZooBox Customer")
-            .setContentText("🟢 Active Monitoring - Orders: ${if (userId != null) "Connected" else "Connecting"}")
+            .setContentText("🟢 Active Monitoring - Orders: $connectionStatus")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -667,15 +756,20 @@ class CookieSenderService : Service() {
             for (cookie in cookies.split(";")) {
                 val trimmedCookie = cookie.trim()
                 if (trimmedCookie.startsWith("user_id=")) {
-                    return trimmedCookie.substring("user_id=".length)
+                    val extractedUserId = trimmedCookie.substring("user_id=".length)
+                    Log.d("CookieSenderService", "Found user_id in cookies: $extractedUserId")
+                    return extractedUserId
                 }
             }
+            Log.d("CookieSenderService", "No user_id found in cookies")
         } catch (e: Exception) {
-            Log.e("CookieSenderService", "Error getting cookie", e)
+            Log.e("CookieSenderService", "Error getting user_id from cookies", e)
 
-            // Try to recover from shared preferences
+            // Try to recover from shared preferences as fallback
             val prefs = applicationContext.getSharedPreferences("ZooBoxCustomerPrefs", Context.MODE_PRIVATE)
-            return prefs.getString("user_id", null)
+            val fallbackUserId = prefs.getString("user_id", null)
+            Log.d("CookieSenderService", "Fallback to SharedPreferences userId: $fallbackUserId")
+            return fallbackUserId
         }
         return null
     }
