@@ -49,6 +49,9 @@ class CookieSenderService : Service() {
     // Keep track of the last notification time to avoid spamming
     private var lastNotificationTime = 0L
 
+    // Set to track shown notifications by order ID and type
+    private val shownNotifications = mutableSetOf<String>()
+
     // Service restart counter for exponential backoff
     private var restartCount = 0
 
@@ -813,12 +816,24 @@ class CookieSenderService : Service() {
                                 val notificationMessage = notification.optString("message", "")
                                 val heroName = notification.optString("hero", "")
                                 val timestamp = notification.optString("timestamp", "")
-                                val orderDate = notification.optString("date", "") // Get date from notification
+                                val orderDate = notification.optString("date", "")
+
+                                // Create unique key for this notification
+                                val notificationKey = "$orderId-$type"
+
+                                // Check if we've already shown this notification
+                                if (shownNotifications.contains(notificationKey)) {
+                                    Log.d("CookieSenderService", "Skipping duplicate notification: $type for order $orderId")
+                                    continue // Skip this notification as we've already shown it
+                                }
 
                                 // Show notification only if we haven't shown one recently
                                 val currentTime = System.currentTimeMillis()
-                                if (currentTime - lastNotificationTime > 5000) { // 5 seconds between notifications
+                                if (currentTime - lastNotificationTime > 15000) { // 15 seconds between notifications
                                     lastNotificationTime = currentTime
+
+                                    // Add this notification to our set of shown notifications
+                                    shownNotifications.add(notificationKey)
 
                                     handler.post {
                                         // Show toast
@@ -827,7 +842,7 @@ class CookieSenderService : Service() {
                                         // Show notification with type-specific handling and date
                                         showOrderNotification(notificationMessage, type, orderId, heroName, orderDate)
 
-                                        Log.d("CookieSenderService", "Notification triggered: $type for order $orderId on date $orderDate")
+                                        Log.d("CookieSenderService", "Notification triggered: $type for order $orderId on date $orderDate (Key: $notificationKey)")
                                     }
                                 }
                             }
@@ -838,6 +853,19 @@ class CookieSenderService : Service() {
                 }
             }
         })
+    }
+
+    // Method to clear old notifications (call when appropriate)
+    fun clearOldNotifications() {
+        shownNotifications.clear()
+        Log.d("CookieSenderService", "Cleared all shown notifications")
+    }
+
+    // Method to remove specific order notifications (call when order is completed)
+    fun clearNotificationsForOrder(orderId: String) {
+        val keysToRemove = shownNotifications.filter { it.startsWith("$orderId-") }
+        shownNotifications.removeAll(keysToRemove.toSet())
+        Log.d("CookieSenderService", "Cleared notifications for order $orderId: $keysToRemove")
     }
 
     private fun showOrderNotification(message: String, type: String = "arrival", orderId: String = "", heroName: String = "", orderDate: String = "") {
