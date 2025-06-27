@@ -4,6 +4,9 @@ import UIKit
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Print configuration in debug mode
+        AppConfig.shared.printConfiguration()
+        
         // Configure Firebase if available
         // FirebaseApp.configure()
         

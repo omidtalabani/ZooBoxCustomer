@@ -73,7 +73,7 @@ class NotificationService: NSObject {
     
     private func sendTokenToServer(token: String) {
         // Implementation to send FCM token to your server
-        guard let url = URL(string: "https://mikmik.site/api/fcm-token") else { return }
+        guard let url = URL(string: AppConfig.shared.fcmTokenAPIEndpoint) else { return }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

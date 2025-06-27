@@ -20,8 +20,8 @@ class LocationService: NSObject {
     private var userId: String?
     
     // Constants
-    private let sendInterval: TimeInterval = 15.0 // 15 seconds like Android
-    private let baseURL = "https://mikmik.site"
+    private let sendInterval: TimeInterval = AppConfig.shared.locationUpdateInterval
+    private let baseURL = AppConfig.shared.baseURL
     
     override init() {
         super.init()

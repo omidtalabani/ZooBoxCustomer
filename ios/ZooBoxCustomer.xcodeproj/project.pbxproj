@@ -22,6 +22,9 @@
 		1A111111111111111111112A /* fcm_notification.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111129 /* fcm_notification.caf */; };
 		1A111111111111111111112C /* new_order_sound.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1A111111111111111111112B /* new_order_sound.caf */; };
 		1A111111111111111111112E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1A111111111111111111112D /* GoogleService-Info.plist */; };
+		1A1111111111111111111130 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A111111111111111111112F /* Extensions.swift */; };
+		1A1111111111111111111132 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111131 /* Constants.swift */; };
+		1A1111111111111111111134 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111133 /* AppConfig.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +45,9 @@
 		1A1111111111111111111129 /* fcm_notification.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = fcm_notification.caf; sourceTree = "<group>"; };
 		1A111111111111111111112B /* new_order_sound.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = new_order_sound.caf; sourceTree = "<group>"; };
 		1A111111111111111111112D /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		1A111111111111111111112F /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		1A1111111111111111111131 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		1A1111111111111111111133 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +85,9 @@
 				1A1111111111111111111132 /* Resources */,
 				1A1111111111111111111110 /* AppDelegate.swift */,
 				1A1111111111111111111112 /* SceneDelegate.swift */,
+				1A111111111111111111112F /* Extensions.swift */,
+				1A1111111111111111111131 /* Constants.swift */,
+				1A1111111111111111111133 /* AppConfig.swift */,
 				1A1111111111111111111122 /* Assets.xcassets */,
 				1A1111111111111111111124 /* LaunchScreen.storyboard */,
 				1A1111111111111111111127 /* Info.plist */,
@@ -205,6 +214,9 @@
 				1A1111111111111111111121 /* CookieManager.swift in Sources */,
 				1A1111111111111111111111 /* AppDelegate.swift in Sources */,
 				1A1111111111111111111113 /* SceneDelegate.swift in Sources */,
+				1A1111111111111111111130 /* Extensions.swift in Sources */,
+				1A1111111111111111111132 /* Constants.swift in Sources */,
+				1A1111111111111111111134 /* AppConfig.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
