@@ -13,3 +13,13 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# iOS specific
+ios/build/
+ios/DerivedData/
+ios/xcuserdata/
+ios/**/*.xcworkspace
+ios/Pods/
+ios/**/*.ipa
+ios/**/*.dSYM.zip
+ios/**/*.dSYM
