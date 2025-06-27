@@ -1,0 +1,430 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A1111111111111111111111 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111110 /* AppDelegate.swift */; };
+		1A1111111111111111111113 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111112 /* SceneDelegate.swift */; };
+		1A1111111111111111111115 /* SplashViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111114 /* SplashViewController.swift */; };
+		1A1111111111111111111117 /* ConnectivityViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111116 /* ConnectivityViewController.swift */; };
+		1A1111111111111111111119 /* PermissionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111118 /* PermissionViewController.swift */; };
+		1A111111111111111111111B /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A111111111111111111111A /* MainViewController.swift */; };
+		1A111111111111111111111D /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A111111111111111111111C /* LocationService.swift */; };
+		1A111111111111111111111F /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A111111111111111111111E /* NotificationService.swift */; };
+		1A1111111111111111111121 /* CookieManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111120 /* CookieManager.swift */; };
+		1A1111111111111111111123 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111122 /* Assets.xcassets */; };
+		1A1111111111111111111126 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111124 /* LaunchScreen.storyboard */; };
+		1A1111111111111111111128 /* splash.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111127 /* splash.mp4 */; };
+		1A111111111111111111112A /* fcm_notification.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1A1111111111111111111129 /* fcm_notification.caf */; };
+		1A111111111111111111112C /* new_order_sound.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1A111111111111111111112B /* new_order_sound.caf */; };
+		1A111111111111111111112E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1A111111111111111111112D /* GoogleService-Info.plist */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1A111111111111111111110D /* ZooBoxCustomer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZooBoxCustomer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A1111111111111111111110 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		1A1111111111111111111112 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		1A1111111111111111111114 /* SplashViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashViewController.swift; sourceTree = "<group>"; };
+		1A1111111111111111111116 /* ConnectivityViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectivityViewController.swift; sourceTree = "<group>"; };
+		1A1111111111111111111118 /* PermissionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionViewController.swift; sourceTree = "<group>"; };
+		1A111111111111111111111A /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		1A111111111111111111111C /* LocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationService.swift; sourceTree = "<group>"; };
+		1A111111111111111111111E /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		1A1111111111111111111120 /* CookieManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookieManager.swift; sourceTree = "<group>"; };
+		1A1111111111111111111122 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1A1111111111111111111125 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		1A1111111111111111111127 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1A1111111111111111111127 /* splash.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = splash.mp4; sourceTree = "<group>"; };
+		1A1111111111111111111129 /* fcm_notification.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = fcm_notification.caf; sourceTree = "<group>"; };
+		1A111111111111111111112B /* new_order_sound.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = new_order_sound.caf; sourceTree = "<group>"; };
+		1A111111111111111111112D /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A111111111111111111110A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1A1111111111111111111104 = {
+			isa = PBXGroup;
+			children = (
+				1A111111111111111111110F /* ZooBoxCustomer */,
+				1A111111111111111111110E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1A111111111111111111110E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1A111111111111111111110D /* ZooBoxCustomer.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1A111111111111111111110F /* ZooBoxCustomer */ = {
+			isa = PBXGroup;
+			children = (
+				1A1111111111111111111130 /* ViewControllers */,
+				1A1111111111111111111131 /* Services */,
+				1A1111111111111111111132 /* Resources */,
+				1A1111111111111111111110 /* AppDelegate.swift */,
+				1A1111111111111111111112 /* SceneDelegate.swift */,
+				1A1111111111111111111122 /* Assets.xcassets */,
+				1A1111111111111111111124 /* LaunchScreen.storyboard */,
+				1A1111111111111111111127 /* Info.plist */,
+				1A111111111111111111112D /* GoogleService-Info.plist */,
+			);
+			path = ZooBoxCustomer;
+			sourceTree = "<group>";
+		};
+		1A1111111111111111111130 /* ViewControllers */ = {
+			isa = PBXGroup;
+			children = (
+				1A1111111111111111111114 /* SplashViewController.swift */,
+				1A1111111111111111111116 /* ConnectivityViewController.swift */,
+				1A1111111111111111111118 /* PermissionViewController.swift */,
+				1A111111111111111111111A /* MainViewController.swift */,
+			);
+			path = ViewControllers;
+			sourceTree = "<group>";
+		};
+		1A1111111111111111111131 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				1A111111111111111111111C /* LocationService.swift */,
+				1A111111111111111111111E /* NotificationService.swift */,
+				1A1111111111111111111120 /* CookieManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		1A1111111111111111111132 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				1A1111111111111111111127 /* splash.mp4 */,
+				1A1111111111111111111129 /* fcm_notification.caf */,
+				1A111111111111111111112B /* new_order_sound.caf */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A111111111111111111110C /* ZooBoxCustomer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A111111111111111111112A /* Build configuration list for PBXNativeTarget "ZooBoxCustomer" */;
+			buildPhases = (
+				1A1111111111111111111109 /* Sources */,
+				1A111111111111111111110A /* Frameworks */,
+				1A111111111111111111110B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ZooBoxCustomer;
+			packageProductDependencies = (
+			);
+			productName = ZooBoxCustomer;
+			productReference = 1A111111111111111111110D /* ZooBoxCustomer.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1A1111111111111111111105 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1520;
+				LastUpgradeCheck = 1520;
+				TargetAttributes = {
+					1A111111111111111111110C = {
+						CreatedOnToolsVersion = 15.2;
+					};
+				};
+			};
+			buildConfigurationList = 1A1111111111111111111108 /* Build configuration list for PBXProject "ZooBoxCustomer" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1A1111111111111111111104;
+			packageReferences = (
+			);
+			productRefGroup = 1A111111111111111111110E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A111111111111111111110C /* ZooBoxCustomer */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1A111111111111111111110B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A1111111111111111111126 /* LaunchScreen.storyboard in Resources */,
+				1A1111111111111111111123 /* Assets.xcassets in Resources */,
+				1A1111111111111111111128 /* splash.mp4 in Resources */,
+				1A111111111111111111112A /* fcm_notification.caf in Resources */,
+				1A111111111111111111112C /* new_order_sound.caf in Resources */,
+				1A111111111111111111112E /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A1111111111111111111109 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A1111111111111111111115 /* SplashViewController.swift in Sources */,
+				1A1111111111111111111117 /* ConnectivityViewController.swift in Sources */,
+				1A1111111111111111111119 /* PermissionViewController.swift in Sources */,
+				1A111111111111111111111B /* MainViewController.swift in Sources */,
+				1A111111111111111111111D /* LocationService.swift in Sources */,
+				1A111111111111111111111F /* NotificationService.swift in Sources */,
+				1A1111111111111111111121 /* CookieManager.swift in Sources */,
+				1A1111111111111111111111 /* AppDelegate.swift in Sources */,
+				1A1111111111111111111113 /* SceneDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		1A1111111111111111111124 /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				1A1111111111111111111125 /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		1A1111111111111111111128 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1A1111111111111111111129 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		1A111111111111111111112B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ZooBoxCustomer/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera permission to capture delivery photos";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app needs location permission to track delivery progress and provide location-based services";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app needs location permission to track delivery progress and provide location-based services";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zoobox.customer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1A111111111111111111112C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ZooBoxCustomer/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera permission to capture delivery photos";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app needs location permission to track delivery progress and provide location-based services";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app needs location permission to track delivery progress and provide location-based services";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zoobox.customer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1A1111111111111111111108 /* Build configuration list for PBXProject "ZooBoxCustomer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A1111111111111111111128 /* Debug */,
+				1A1111111111111111111129 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A111111111111111111112A /* Build configuration list for PBXNativeTarget "ZooBoxCustomer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A111111111111111111112B /* Debug */,
+				1A111111111111111111112C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1A1111111111111111111105 /* Project object */;
+}
