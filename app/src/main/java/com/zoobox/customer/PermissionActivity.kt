@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -47,23 +49,25 @@ import com.zoobox.customer.ui.theme.ZooBoxCustomerTheme
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
+
+// FIXED: Move PermissionType outside the class and make it public
+enum class PermissionType {
+    LOCATION, BACKGROUND_LOCATION, NOTIFICATION, CAMERA, BATTERY_OPTIMIZATION
+}
 
 class PermissionActivity : ComponentActivity() {
 
-    // Permission data class - all permissions are mandatory
+    // IMPROVED: Permission data class with explicit type (now using public enum)
     data class PermissionStep(
         val title: String,
         val description: String,
         val detailedDescription: String,
         val icon: ImageVector,
+        val type: PermissionType, // Now uses public enum
         val isGranted: Boolean = false,
         val isRequired: Boolean = true // Always true - all permissions are mandatory
     )
-
-    // Permission type enum
-    private enum class PermissionType {
-        LOCATION, BACKGROUND_LOCATION, NOTIFICATION, CAMERA, BATTERY_OPTIMIZATION
-    }
 
     // SharedPreferences for first-time detection
     private lateinit var sharedPreferences: SharedPreferences
@@ -76,33 +80,46 @@ class PermissionActivity : ComponentActivity() {
     private var isCheckingPermissions by mutableStateOf(true)
     private var isProcessingPermission by mutableStateOf(false)
     private var showWelcomeScreen by mutableStateOf(false)
+    private var showExitDialog by mutableStateOf(false)
 
     // Enhanced variables to force permission requests
     private var forcePermissionRequest = false
     private var permissionRequestCount = mutableMapOf<String, Int>()
 
-    // Auto-tracking variables
+    // Auto-tracking variables with timeouts
     private var permissionMonitoringJob: Job? = null
-    private var isWaitingForLocationSettings = false
-    private var isWaitingForNotificationSettings = false
-    private var isWaitingForCameraSettings = false
-    private var isWaitingForBatterySettings = false
-    private var isWaitingForBackgroundLocationSettings = false
+    private var isWaitingForLocationSettings by mutableStateOf(false)
+    private var isWaitingForNotificationSettings by mutableStateOf(false)
+    private var isWaitingForCameraSettings by mutableStateOf(false)
+    private var isWaitingForBatterySettings by mutableStateOf(false)
+    private var isWaitingForBackgroundLocationSettings by mutableStateOf(false)
+
+    // IMPROVED: Enhanced stuck state prevention
+    private var lastPermissionRequestTime = 0L
+    private var stuckStateCheckJob: Job? = null
+    private var stuckRecoveryCount = 0
 
     companion object {
         private const val PREFS_NAME = "zoobox_hero_prefs"
         private const val KEY_FIRST_TIME = "is_first_time"
         private const val KEY_PERMISSIONS_GRANTED = "permissions_granted_before"
         private const val PERMISSION_CHECK_INTERVAL = 1000L // Check every second
-        private const val MAX_MONITORING_TIME = 60000L // Monitor for max 60 seconds
+        private const val MAX_MONITORING_TIME = 30000L // Reduced to 30 seconds
+        private const val PERMISSION_REQUEST_TIMEOUT = 5000L // 5 second timeout for requests
+        private const val STUCK_STATE_TIMEOUT = 10000L // 10 seconds
+        private const val MAX_STUCK_RECOVERIES = 3
     }
 
-    // Enhanced permission launchers that trigger auto-monitoring
+    // Enhanced permission launchers with proper timeout handling
     private val requestLocationPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions.entries.any { it.value }
         Log.d("PermissionActivity", "Location permissions result: $permissions")
+
+        // Reset processing state immediately
+        isProcessingPermission = false
+        stuckStateCheckJob?.cancel()
 
         if (!granted) {
             // Increment attempt counter
@@ -113,7 +130,8 @@ class PermissionActivity : ComponentActivity() {
             // Start monitoring for manual permission grant
             startLocationPermissionMonitoring()
         } else {
-            handlePermissionResult(0, granted)
+            val stepIndex = findStepIndexByType(PermissionType.LOCATION)
+            handlePermissionResult(stepIndex, granted)
         }
     }
 
@@ -121,6 +139,10 @@ class PermissionActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         Log.d("PermissionActivity", "Background location permission result: $isGranted")
+
+        // Reset processing state immediately
+        isProcessingPermission = false
+        stuckStateCheckJob?.cancel()
 
         if (!isGranted) {
             val permission = Manifest.permission.ACCESS_BACKGROUND_LOCATION
@@ -138,6 +160,10 @@ class PermissionActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         Log.d("PermissionActivity", "Notification permission result: $isGranted")
+
+        // Reset processing state immediately
+        isProcessingPermission = false
+        stuckStateCheckJob?.cancel()
 
         if (!isGranted) {
             val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -161,6 +187,10 @@ class PermissionActivity : ComponentActivity() {
     ) { isGranted ->
         Log.d("PermissionActivity", "Camera permission result: $isGranted")
 
+        // Reset processing state immediately
+        isProcessingPermission = false
+        stuckStateCheckJob?.cancel()
+
         if (!isGranted) {
             permissionRequestCount[Manifest.permission.CAMERA] =
                 (permissionRequestCount[Manifest.permission.CAMERA] ?: 0) + 1
@@ -177,6 +207,11 @@ class PermissionActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         Log.d("PermissionActivity", "Battery optimization result: ${result.resultCode}")
+
+        // Reset processing state immediately
+        isProcessingPermission = false
+        stuckStateCheckJob?.cancel()
+
         // Always start monitoring regardless of result code
         startBatteryOptimizationMonitoring()
     }
@@ -186,6 +221,11 @@ class PermissionActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
         Log.d("PermissionActivity", "Returned from app settings")
+
+        // Reset processing state
+        isProcessingPermission = false
+        stuckStateCheckJob?.cancel()
+
         // Start comprehensive monitoring for all permissions
         startComprehensivePermissionMonitoring()
     }
@@ -193,7 +233,7 @@ class PermissionActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        Log.d("PermissionActivity", "Permission activity started - ALL PERMISSIONS ARE MANDATORY")
+        Log.d("PermissionActivity", "Permission activity started on: ${getDeviceInfo()}")
 
         // Initialize SharedPreferences
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -208,6 +248,19 @@ class PermissionActivity : ComponentActivity() {
 
         setContent {
             ZooBoxCustomerTheme {
+                // Show exit confirmation dialog
+                if (showExitDialog) {
+                    ExitConfirmationDialog(
+                        onConfirmExit = {
+                            showExitDialog = false
+                            finishAffinity() // Close entire app
+                        },
+                        onContinue = {
+                            showExitDialog = false
+                        }
+                    )
+                }
+
                 if (showWelcomeScreen) {
                     // Show welcome screen only when needed
                     WelcomeScreen(
@@ -219,6 +272,7 @@ class PermissionActivity : ComponentActivity() {
                         steps = permissionSteps,
                         currentStep = currentStepIndex,
                         isCheckingPermissions = isCheckingPermissions,
+                        isProcessingPermission = isProcessingPermission,
                         onGrantPermission = { requestCurrentPermission() },
                         onOpenSettings = { openAppSettings() },
                         onRetryPermission = { retryPermissionRequest() },
@@ -237,243 +291,109 @@ class PermissionActivity : ComponentActivity() {
         checkAllPermissions()
     }
 
-    // Auto-monitoring functions for each permission type
-    private fun startLocationPermissionMonitoring() {
-        isWaitingForLocationSettings = true
-        Log.d("PermissionActivity", "Starting location permission monitoring")
+    // FIXED: Proper back button handling with user choice
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        Log.d("PermissionActivity", "Back button pressed - showing exit confirmation")
 
-        permissionMonitoringJob?.cancel()
-        permissionMonitoringJob = lifecycleScope.launch {
-            var elapsedTime = 0L
+        // Don't call super.onBackPressed() immediately
+        // Instead, show dialog to let user choose
+        showExitDialog = true
+    }
 
-            while (isWaitingForLocationSettings && elapsedTime < MAX_MONITORING_TIME) {
-                delay(PERMISSION_CHECK_INTERVAL)
-                elapsedTime += PERMISSION_CHECK_INTERVAL
+    // IMPROVED: Device-specific compatibility checks
+    private fun getDeviceInfo(): String {
+        return "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT})"
+    }
 
-                val isGranted = checkLocationPermission()
-                Log.d("PermissionActivity", "Monitoring location permission - Elapsed: ${elapsedTime}ms, Granted: $isGranted")
+    private fun isKnownProblematicDevice(): Boolean {
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        val model = Build.MODEL.lowercase()
 
-                if (isGranted) {
-                    Log.d("PermissionActivity", "Location permission granted detected!")
-                    isWaitingForLocationSettings = false
-                    handlePermissionResult(0, true)
-                    break
-                }
-            }
-
-            if (elapsedTime >= MAX_MONITORING_TIME) {
-                Log.d("PermissionActivity", "Location permission monitoring timeout")
-                isWaitingForLocationSettings = false
-            }
+        return when {
+            manufacturer.contains("xiaomi") -> true
+            manufacturer.contains("huawei") -> true
+            manufacturer.contains("oppo") -> true
+            manufacturer.contains("vivo") -> true
+            manufacturer.contains("oneplus") -> true
+            manufacturer.contains("realme") -> true
+            model.contains("miui") -> true
+            else -> false
         }
     }
 
-    private fun startBackgroundLocationPermissionMonitoring() {
-        isWaitingForBackgroundLocationSettings = true
-        Log.d("PermissionActivity", "Starting background location permission monitoring")
+    // IMPROVED: Initialize with explicit types
+    private fun initializePermissionSteps() {
+        permissionSteps = buildList {
+            // Step 1: Location Permission - MANDATORY
+            add(PermissionStep(
+                title = "Location Access",
+                description = "Required for delivery tracking",
+                detailedDescription = "ZooBox requires access to your device location to provide accurate delivery tracking and route optimization. This permission is mandatory for app functionality.",
+                icon = Icons.Default.LocationOn,
+                type = PermissionType.LOCATION
+            ))
 
-        permissionMonitoringJob?.cancel()
-        permissionMonitoringJob = lifecycleScope.launch {
-            var elapsedTime = 0L
-
-            while (isWaitingForBackgroundLocationSettings && elapsedTime < MAX_MONITORING_TIME) {
-                delay(PERMISSION_CHECK_INTERVAL)
-                elapsedTime += PERMISSION_CHECK_INTERVAL
-
-                val isGranted = checkBackgroundLocationPermission()
-                Log.d("PermissionActivity", "Monitoring background location permission - Elapsed: ${elapsedTime}ms, Granted: $isGranted")
-
-                if (isGranted) {
-                    Log.d("PermissionActivity", "Background location permission granted detected!")
-                    isWaitingForBackgroundLocationSettings = false
-                    val stepIndex = findStepIndexByType(PermissionType.BACKGROUND_LOCATION)
-                    handlePermissionResult(stepIndex, true)
-                    break
-                }
+            // Step 2: Background Location (only for Android 10+) - MANDATORY
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                add(PermissionStep(
+                    title = "Background Location",
+                    description = "Required for continuous tracking",
+                    detailedDescription = "Background location access is required to continue tracking deliveries even when the app is not actively open. This ensures uninterrupted service.",
+                    icon = Icons.Default.MyLocation,
+                    type = PermissionType.BACKGROUND_LOCATION
+                ))
             }
 
-            if (elapsedTime >= MAX_MONITORING_TIME) {
-                Log.d("PermissionActivity", "Background location permission monitoring timeout")
-                isWaitingForBackgroundLocationSettings = false
-            }
-        }
-    }
-
-    private fun startNotificationPermissionMonitoring() {
-        isWaitingForNotificationSettings = true
-        Log.d("PermissionActivity", "Starting notification permission monitoring")
-
-        permissionMonitoringJob?.cancel()
-        permissionMonitoringJob = lifecycleScope.launch {
-            var elapsedTime = 0L
-
-            while (isWaitingForNotificationSettings && elapsedTime < MAX_MONITORING_TIME) {
-                delay(PERMISSION_CHECK_INTERVAL)
-                elapsedTime += PERMISSION_CHECK_INTERVAL
-
-                val isGranted = checkNotificationPermission()
-                Log.d("PermissionActivity", "Monitoring notification permission - Elapsed: ${elapsedTime}ms, Granted: $isGranted")
-
-                if (isGranted) {
-                    Log.d("PermissionActivity", "Notification permission granted detected!")
-                    isWaitingForNotificationSettings = false
-                    val stepIndex = findStepIndexByType(PermissionType.NOTIFICATION)
-                    handlePermissionResult(stepIndex, true)
-                    break
-                }
+            // Step 3: Notification Permission (only for Android 13+) - MANDATORY
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(PermissionStep(
+                    title = "Notifications",
+                    description = "Required for delivery alerts",
+                    detailedDescription = "Notification permission is required to receive instant alerts about new orders, delivery updates, and critical app information.",
+                    icon = Icons.Default.Notifications,
+                    type = PermissionType.NOTIFICATION
+                ))
             }
 
-            if (elapsedTime >= MAX_MONITORING_TIME) {
-                Log.d("PermissionActivity", "Notification permission monitoring timeout")
-                isWaitingForNotificationSettings = false
+            // Step 4: Camera Permission - MANDATORY
+            add(PermissionStep(
+                title = "Camera Access",
+                description = "Required for delivery photos",
+                detailedDescription = "Camera permission is required to capture delivery photos and proof of delivery. Images are uploaded directly without saving to your device.",
+                icon = Icons.Default.CameraAlt,
+                type = PermissionType.CAMERA
+            ))
+
+            // Step 5: Battery Optimization (Android 6+) - MANDATORY
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                add(PermissionStep(
+                    title = "Battery Optimization",
+                    description = "Required for reliable operation",
+                    detailedDescription = "Disabling battery optimization is required to prevent the system from limiting app functionality and ensuring reliable notifications and location tracking.",
+                    icon = Icons.Default.BatteryFull,
+                    type = PermissionType.BATTERY_OPTIMIZATION
+                ))
             }
         }
+
+        Log.d("PermissionActivity", "Initialized ${permissionSteps.size} MANDATORY permission steps")
     }
 
-    private fun startCameraPermissionMonitoring() {
-        isWaitingForCameraSettings = true
-        Log.d("PermissionActivity", "Starting camera permission monitoring")
-
-        permissionMonitoringJob?.cancel()
-        permissionMonitoringJob = lifecycleScope.launch {
-            var elapsedTime = 0L
-
-            while (isWaitingForCameraSettings && elapsedTime < MAX_MONITORING_TIME) {
-                delay(PERMISSION_CHECK_INTERVAL)
-                elapsedTime += PERMISSION_CHECK_INTERVAL
-
-                val isGranted = checkCameraPermission()
-                Log.d("PermissionActivity", "Monitoring camera permission - Elapsed: ${elapsedTime}ms, Granted: $isGranted")
-
-                if (isGranted) {
-                    Log.d("PermissionActivity", "Camera permission granted detected!")
-                    isWaitingForCameraSettings = false
-                    val stepIndex = findStepIndexByType(PermissionType.CAMERA)
-                    handlePermissionResult(stepIndex, true)
-                    break
-                }
-            }
-
-            if (elapsedTime >= MAX_MONITORING_TIME) {
-                Log.d("PermissionActivity", "Camera permission monitoring timeout")
-                isWaitingForCameraSettings = false
-            }
-        }
+    // IMPROVED: Remove error-prone index mapping
+    private fun getCurrentPermissionType(): PermissionType? {
+        return if (currentStepIndex < permissionSteps.size) {
+            permissionSteps[currentStepIndex].type
+        } else null
     }
 
-    private fun startBatteryOptimizationMonitoring() {
-        isWaitingForBatterySettings = true
-        Log.d("PermissionActivity", "Starting battery optimization monitoring")
-
-        permissionMonitoringJob?.cancel()
-        permissionMonitoringJob = lifecycleScope.launch {
-            var elapsedTime = 0L
-
-            while (isWaitingForBatterySettings && elapsedTime < MAX_MONITORING_TIME) {
-                delay(PERMISSION_CHECK_INTERVAL)
-                elapsedTime += PERMISSION_CHECK_INTERVAL
-
-                val isOptimizationDisabled = checkBatteryOptimization()
-                Log.d("PermissionActivity", "Monitoring battery optimization - Elapsed: ${elapsedTime}ms, Disabled: $isOptimizationDisabled")
-
-                if (isOptimizationDisabled) {
-                    Log.d("PermissionActivity", "Battery optimization disabled detected!")
-                    isWaitingForBatterySettings = false
-                    val stepIndex = findStepIndexByType(PermissionType.BATTERY_OPTIMIZATION)
-                    handlePermissionResult(stepIndex, true)
-                    break
-                }
-            }
-
-            if (elapsedTime >= MAX_MONITORING_TIME) {
-                Log.d("PermissionActivity", "Battery optimization monitoring timeout")
-                isWaitingForBatterySettings = false
-            }
-        }
-    }
-
-    private fun startComprehensivePermissionMonitoring() {
-        Log.d("PermissionActivity", "Starting comprehensive permission monitoring")
-
-        permissionMonitoringJob?.cancel()
-        permissionMonitoringJob = lifecycleScope.launch {
-            var elapsedTime = 0L
-
-            while (elapsedTime < MAX_MONITORING_TIME) {
-                delay(PERMISSION_CHECK_INTERVAL)
-                elapsedTime += PERMISSION_CHECK_INTERVAL
-
-                // Check all permissions
-                val locationGranted = checkLocationPermission()
-                val backgroundLocationGranted = checkBackgroundLocationPermission()
-                val notificationGranted = checkNotificationPermission()
-                val cameraGranted = checkCameraPermission()
-                val batteryOptimizationDisabled = checkBatteryOptimization()
-
-                Log.d("PermissionActivity", "Comprehensive monitoring - Location: $locationGranted, Background: $backgroundLocationGranted, Notification: $notificationGranted, Camera: $cameraGranted, Battery: $batteryOptimizationDisabled")
-
-                // Check if any permission state changed
-                var permissionChanged = false
-
-                if (locationGranted && !permissionSteps.getOrNull(0)?.isGranted!!) {
-                    Log.d("PermissionActivity", "Location permission change detected!")
-                    permissionChanged = true
-                }
-
-                val backgroundStepIndex = findStepIndexByType(PermissionType.BACKGROUND_LOCATION)
-                if (backgroundStepIndex >= 0 && backgroundLocationGranted && !permissionSteps[backgroundStepIndex].isGranted) {
-                    Log.d("PermissionActivity", "Background location permission change detected!")
-                    permissionChanged = true
-                }
-
-                val notificationStepIndex = findStepIndexByType(PermissionType.NOTIFICATION)
-                if (notificationStepIndex >= 0 && notificationGranted && !permissionSteps[notificationStepIndex].isGranted) {
-                    Log.d("PermissionActivity", "Notification permission change detected!")
-                    permissionChanged = true
-                }
-
-                val cameraStepIndex = findStepIndexByType(PermissionType.CAMERA)
-                if (cameraStepIndex >= 0 && cameraGranted && !permissionSteps[cameraStepIndex].isGranted) {
-                    Log.d("PermissionActivity", "Camera permission change detected!")
-                    permissionChanged = true
-                }
-
-                val batteryStepIndex = findStepIndexByType(PermissionType.BATTERY_OPTIMIZATION)
-                if (batteryStepIndex >= 0 && batteryOptimizationDisabled && !permissionSteps[batteryStepIndex].isGranted) {
-                    Log.d("PermissionActivity", "Battery optimization change detected!")
-                    permissionChanged = true
-                }
-
-                if (permissionChanged) {
-                    // Stop all monitoring
-                    stopAllMonitoring()
-                    // Recheck all permissions
-                    checkAllPermissions()
-                    break
-                }
-            }
-
-            if (elapsedTime >= MAX_MONITORING_TIME) {
-                Log.d("PermissionActivity", "Comprehensive permission monitoring timeout")
-                stopAllMonitoring()
-            }
-        }
-    }
-
-    private fun stopAllMonitoring() {
-        isWaitingForLocationSettings = false
-        isWaitingForNotificationSettings = false
-        isWaitingForCameraSettings = false
-        isWaitingForBatterySettings = false
-        isWaitingForBackgroundLocationSettings = false
-        permissionMonitoringJob?.cancel()
-        Log.d("PermissionActivity", "All permission monitoring stopped")
+    private fun findStepIndexByType(type: PermissionType): Int {
+        return permissionSteps.indexOfFirst { it.type == type }
     }
 
     private fun getCurrentPermissionAttempts(): Int {
-        if (currentStepIndex >= permissionSteps.size) return 0
+        val currentPermissionType = getCurrentPermissionType() ?: return 0
 
-        val currentPermissionType = getPermissionTypeForIndex(currentStepIndex)
         val permission = when (currentPermissionType) {
             PermissionType.LOCATION -> Manifest.permission.ACCESS_FINE_LOCATION
             PermissionType.BACKGROUND_LOCATION -> Manifest.permission.ACCESS_BACKGROUND_LOCATION
@@ -486,9 +406,252 @@ class PermissionActivity : ComponentActivity() {
         return permissionRequestCount[permission] ?: 0
     }
 
+    private fun checkAllPermissions() {
+        isCheckingPermissions = true
+        Log.d("PermissionActivity", "Checking all MANDATORY permissions...")
+
+        lifecycleScope.launch {
+            try {
+                // Check each permission and update states
+                val updatedSteps = permissionSteps.mapIndexed { index, step ->
+                    val isGranted = when (step.type) {
+                        PermissionType.LOCATION -> checkLocationPermission()
+                        PermissionType.BACKGROUND_LOCATION -> checkBackgroundLocationPermission()
+                        PermissionType.NOTIFICATION -> checkNotificationPermission()
+                        PermissionType.CAMERA -> checkCameraPermission()
+                        PermissionType.BATTERY_OPTIMIZATION -> checkBatteryOptimization()
+                    }
+                    Log.d("PermissionActivity", "MANDATORY Permission ${step.title}: $isGranted")
+                    step.copy(isGranted = isGranted)
+                }
+
+                permissionSteps = updatedSteps
+
+                // Check if all permissions are granted
+                val allGranted = permissionSteps.all { it.isGranted }
+                val hadPermissionsBefore = sharedPreferences.getBoolean(KEY_PERMISSIONS_GRANTED, false)
+
+                if (allGranted) {
+                    // ALL MANDATORY permissions granted
+                    Log.d("PermissionActivity", "ALL MANDATORY permissions granted")
+
+                    // Stop any ongoing monitoring
+                    stopAllMonitoring()
+
+                    // Save that permissions have been granted
+                    sharedPreferences.edit()
+                        .putBoolean(KEY_PERMISSIONS_GRANTED, true)
+                        .apply()
+
+                    // Determine if we should show welcome screen
+                    shouldShowWelcome = isFirstTime || !hadPermissionsBefore
+
+                    if (shouldShowWelcome) {
+                        // Show welcome screen for first time users or when permissions were just granted
+                        Log.d("PermissionActivity", "Showing welcome screen (first time: $isFirstTime, had permissions before: $hadPermissionsBefore)")
+                        showWelcomeScreen = true
+                        isCheckingPermissions = false
+
+                        // Mark as no longer first time
+                        if (isFirstTime) {
+                            sharedPreferences.edit()
+                                .putBoolean(KEY_FIRST_TIME, false)
+                                .apply()
+                        }
+                    } else {
+                        // Skip welcome screen and go directly to MainActivity
+                        Log.d("PermissionActivity", "Skipping welcome screen, proceeding directly to MainActivity")
+                        proceedToMainActivity()
+                    }
+                } else {
+                    // Find first non-granted permission
+                    val firstDeniedIndex = permissionSteps.indexOfFirst { !it.isGranted }
+
+                    // Only update current step if we're not processing a permission
+                    if (!isProcessingPermission) {
+                        currentStepIndex = firstDeniedIndex
+                        Log.d("PermissionActivity", "MANDATORY permission missing - Current step: $currentStepIndex (${permissionSteps[currentStepIndex].title})")
+                    }
+                    showWelcomeScreen = false
+                    isCheckingPermissions = false
+                }
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error checking permissions", e)
+                isCheckingPermissions = false
+            }
+        }
+    }
+
+    private fun handlePermissionResult(stepIndex: Int, granted: Boolean) {
+        isProcessingPermission = false
+        stuckStateCheckJob?.cancel()
+        Log.d("PermissionActivity", "MANDATORY permission result for step $stepIndex: $granted")
+
+        // Update the specific step
+        if (stepIndex >= 0 && stepIndex < permissionSteps.size) {
+            permissionSteps = permissionSteps.toMutableList().apply {
+                this[stepIndex] = this[stepIndex].copy(isGranted = granted)
+            }
+        }
+
+        if (!granted) {
+            Log.w("PermissionActivity", "MANDATORY permission denied for step $stepIndex - user must grant to continue")
+        }
+
+        // Always recheck all permissions after any permission result
+        checkAllPermissions()
+    }
+
+    // IMPROVED: Enhanced permission request with stuck state detection
+    private fun requestCurrentPermission() {
+        if (currentStepIndex >= permissionSteps.size) {
+            Log.w("PermissionActivity", "Current step index out of bounds: $currentStepIndex")
+            return
+        }
+
+        if (isProcessingPermission) {
+            Log.w("PermissionActivity", "Permission request already in progress")
+            return
+        }
+
+        isProcessingPermission = true
+        lastPermissionRequestTime = System.currentTimeMillis()
+
+        // Start stuck state monitoring
+        startStuckStateMonitoring()
+
+        val currentPermissionType = getCurrentPermissionType()
+
+        if (currentPermissionType == null) {
+            Log.e("PermissionActivity", "Invalid permission type for current step")
+            isProcessingPermission = false
+            return
+        }
+
+        Log.d("PermissionActivity", "Requesting MANDATORY permission: $currentPermissionType")
+
+        lifecycleScope.launch {
+            try {
+                withTimeoutOrNull(PERMISSION_REQUEST_TIMEOUT) {
+                    when (currentPermissionType) {
+                        PermissionType.LOCATION -> requestLocationPermissions()
+                        PermissionType.BACKGROUND_LOCATION -> requestBackgroundLocationPermission()
+                        PermissionType.NOTIFICATION -> requestNotificationPermission()
+                        PermissionType.CAMERA -> requestCameraPermission()
+                        PermissionType.BATTERY_OPTIMIZATION -> requestBatteryOptimizationDisable()
+                    }
+                } ?: run {
+                    // Timeout occurred
+                    Log.w("PermissionActivity", "Permission request timed out")
+                    handleStuckState("Request timeout")
+                }
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error requesting permission", e)
+                handleStuckState("Request exception: ${e.message}")
+            }
+        }
+
+        forcePermissionRequest = false
+    }
+
+    private fun startStuckStateMonitoring() {
+        stuckStateCheckJob?.cancel()
+        stuckStateCheckJob = lifecycleScope.launch {
+            delay(STUCK_STATE_TIMEOUT)
+
+            if (isProcessingPermission) {
+                val elapsedTime = System.currentTimeMillis() - lastPermissionRequestTime
+                if (elapsedTime >= STUCK_STATE_TIMEOUT) {
+                    Log.w("PermissionActivity", "Detected stuck state after ${elapsedTime}ms")
+                    handleStuckState("Stuck state timeout")
+                }
+            }
+        }
+    }
+
+    private fun handleStuckState(reason: String) {
+        Log.w("PermissionActivity", "Handling stuck state: $reason")
+
+        stuckRecoveryCount++
+
+        if (stuckRecoveryCount <= MAX_STUCK_RECOVERIES) {
+            // Reset processing state
+            isProcessingPermission = false
+            stopAllMonitoring()
+
+            // Start monitoring for manual permission grant
+            val currentPermissionType = getCurrentPermissionType()
+            when (currentPermissionType) {
+                PermissionType.LOCATION -> startLocationPermissionMonitoring()
+                PermissionType.BACKGROUND_LOCATION -> startBackgroundLocationPermissionMonitoring()
+                PermissionType.NOTIFICATION -> startNotificationPermissionMonitoring()
+                PermissionType.CAMERA -> startCameraPermissionMonitoring()
+                PermissionType.BATTERY_OPTIMIZATION -> startBatteryOptimizationMonitoring()
+                null -> {
+                    Log.e("PermissionActivity", "Cannot recover from stuck state - invalid permission type")
+                    checkAllPermissions()
+                }
+            }
+        } else {
+            Log.e("PermissionActivity", "Max stuck recovery attempts reached")
+            isProcessingPermission = false
+            stopAllMonitoring()
+            checkAllPermissions()
+        }
+    }
+
+    // FIXED: Enhanced retry mechanism with proper state reset
+    private fun retryPermissionRequest() {
+        Log.d("PermissionActivity", "Force retrying permission request for step $currentStepIndex")
+
+        // Reset all processing states
+        isProcessingPermission = false
+        stopAllMonitoring()
+        stuckStateCheckJob?.cancel()
+
+        lifecycleScope.launch {
+            try {
+                // Small delay to ensure UI updates
+                delay(300)
+                forcePermissionRequest = true
+                requestCurrentPermission()
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error in retry permission", e)
+                isProcessingPermission = false
+            }
+        }
+    }
+
+    // Enhanced onResume with better stuck state detection
     override fun onResume() {
         super.onResume()
         Log.d("PermissionActivity", "Permission activity resumed")
+
+        // Cancel stuck state monitoring since we're back
+        stuckStateCheckJob?.cancel()
+
+        // Reset stuck recovery counter on successful resume
+        if (isProcessingPermission) {
+            val elapsedTime = System.currentTimeMillis() - lastPermissionRequestTime
+            if (elapsedTime > STUCK_STATE_TIMEOUT) {
+                Log.w("PermissionActivity", "Long processing detected on resume, checking state")
+                handleStuckState("Long processing on resume")
+                return
+            }
+        }
+
+        // Reset processing state if we were waiting too long
+        lifecycleScope.launch {
+            delay(1000) // Give some time for launchers to complete
+            if (isProcessingPermission) {
+                val elapsedTime = System.currentTimeMillis() - lastPermissionRequestTime
+                if (elapsedTime > STUCK_STATE_TIMEOUT) {
+                    Log.w("PermissionActivity", "Resetting stuck processing state on resume")
+                    handleStuckState("Stuck processing on resume")
+                    return@launch
+                }
+            }
+        }
 
         // Check if we're monitoring any specific permission
         if (isWaitingForLocationSettings || isWaitingForNotificationSettings ||
@@ -501,7 +664,8 @@ class PermissionActivity : ComponentActivity() {
                     if (checkLocationPermission()) {
                         Log.d("PermissionActivity", "Location permission granted on resume!")
                         stopAllMonitoring()
-                        handlePermissionResult(0, true)
+                        val stepIndex = findStepIndexByType(PermissionType.LOCATION)
+                        handlePermissionResult(stepIndex, true)
                         return
                     }
                 }
@@ -552,247 +716,263 @@ class PermissionActivity : ComponentActivity() {
         }
     }
 
-    // Prevent back button from exiting - all permissions must be granted
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        super.onBackPressed()
-        // Don't call super.onBackPressed() - this prevents the back button from working
-        Log.d("PermissionActivity", "Back button pressed - ignored (all permissions required)")
-        // Optionally show a message to the user
-        showMandatoryPermissionMessage()
-    }
+    // Auto-monitoring functions with improved timeout and cancellation
+    private fun startLocationPermissionMonitoring() {
+        isWaitingForLocationSettings = true
+        Log.d("PermissionActivity", "Starting location permission monitoring")
 
-    private fun showMandatoryPermissionMessage() {
-        // You can show a toast or dialog here explaining that all permissions are required
-        // For now, we'll just log it
-        Log.d("PermissionActivity", "All permissions are mandatory for app functionality")
-    }
+        permissionMonitoringJob?.cancel()
+        permissionMonitoringJob = lifecycleScope.launch {
+            try {
+                withTimeoutOrNull(MAX_MONITORING_TIME) {
+                    var elapsedTime = 0L
 
-    private fun initializePermissionSteps() {
-        permissionSteps = buildList {
-            // Step 1: Location Permission - MANDATORY
-            add(PermissionStep(
-                title = "Location Access",
-                description = "Required for delivery tracking",
-                detailedDescription = "ZooBox Hero REQUIRES access to your device location to provide accurate delivery tracking and route optimization. This permission is mandatory for app functionality.",
-                icon = Icons.Default.LocationOn
-            ))
+                    while (isWaitingForLocationSettings && elapsedTime < MAX_MONITORING_TIME) {
+                        delay(PERMISSION_CHECK_INTERVAL)
+                        elapsedTime += PERMISSION_CHECK_INTERVAL
 
-            // Step 2: Background Location (only for Android 10+) - MANDATORY
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                add(PermissionStep(
-                    title = "Background Location",
-                    description = "Required for continuous tracking",
-                    detailedDescription = "Background location access is MANDATORY to continue tracking deliveries even when the app is not actively open. This ensures uninterrupted service.",
-                    icon = Icons.Default.MyLocation
-                ))
-            }
+                        val isGranted = checkLocationPermission()
+                        Log.d("PermissionActivity", "Monitoring location permission - Elapsed: ${elapsedTime}ms, Granted: $isGranted")
 
-            // Step 3: Notification Permission (only for Android 13+) - MANDATORY
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(PermissionStep(
-                    title = "Notifications",
-                    description = "Required for delivery alerts",
-                    detailedDescription = "Notification permission is MANDATORY to receive instant alerts about new orders, delivery updates, and critical app information.",
-                    icon = Icons.Default.Notifications
-                ))
-            }
-
-            // Step 4: Camera Permission - MANDATORY
-            add(PermissionStep(
-                title = "Camera Access",
-                description = "Required for delivery photos",
-                detailedDescription = "Camera permission is MANDATORY to capture delivery photos and proof of delivery. Images are uploaded directly without saving to your device.",
-                icon = Icons.Default.CameraAlt
-            ))
-
-            // Step 5: Battery Optimization (Android 6+) - MANDATORY
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                add(PermissionStep(
-                    title = "Battery Optimization",
-                    description = "Required for reliable operation",
-                    detailedDescription = "Disabling battery optimization is MANDATORY to prevent the system from limiting app functionality and ensuring reliable notifications and location tracking.",
-                    icon = Icons.Default.BatteryFull
-                ))
-            }
-        }
-
-        Log.d("PermissionActivity", "Initialized ${permissionSteps.size} MANDATORY permission steps")
-    }
-
-    private fun checkAllPermissions() {
-        isCheckingPermissions = true
-        Log.d("PermissionActivity", "Checking all MANDATORY permissions...")
-
-        // Check each permission and update states
-        val updatedSteps = permissionSteps.mapIndexed { index, step ->
-            val isGranted = when (getPermissionTypeForIndex(index)) {
-                PermissionType.LOCATION -> checkLocationPermission()
-                PermissionType.BACKGROUND_LOCATION -> checkBackgroundLocationPermission()
-                PermissionType.NOTIFICATION -> checkNotificationPermission()
-                PermissionType.CAMERA -> checkCameraPermission()
-                PermissionType.BATTERY_OPTIMIZATION -> checkBatteryOptimization()
-            }
-            Log.d("PermissionActivity", "MANDATORY Permission ${step.title}: $isGranted")
-            step.copy(isGranted = isGranted)
-        }
-
-        permissionSteps = updatedSteps
-
-        // Check if all permissions are granted
-        val allGranted = permissionSteps.all { it.isGranted }
-        val hadPermissionsBefore = sharedPreferences.getBoolean(KEY_PERMISSIONS_GRANTED, false)
-
-        if (allGranted) {
-            // ALL MANDATORY permissions granted
-            Log.d("PermissionActivity", "ALL MANDATORY permissions granted")
-
-            // Stop any ongoing monitoring
-            stopAllMonitoring()
-
-            // Save that permissions have been granted
-            sharedPreferences.edit()
-                .putBoolean(KEY_PERMISSIONS_GRANTED, true)
-                .apply()
-
-            // Determine if we should show welcome screen
-            shouldShowWelcome = isFirstTime || !hadPermissionsBefore
-
-            if (shouldShowWelcome) {
-                // Show welcome screen for first time users or when permissions were just granted
-                Log.d("PermissionActivity", "Showing welcome screen (first time: $isFirstTime, had permissions before: $hadPermissionsBefore)")
-                showWelcomeScreen = true
-                isCheckingPermissions = false
-
-                // Mark as no longer first time
-                if (isFirstTime) {
-                    sharedPreferences.edit()
-                        .putBoolean(KEY_FIRST_TIME, false)
-                        .apply()
+                        if (isGranted) {
+                            Log.d("PermissionActivity", "Location permission granted detected!")
+                            isWaitingForLocationSettings = false
+                            val stepIndex = findStepIndexByType(PermissionType.LOCATION)
+                            handlePermissionResult(stepIndex, true)
+                            return@withTimeoutOrNull
+                        }
+                    }
                 }
-            } else {
-                // Skip welcome screen and go directly to MainActivity
-                Log.d("PermissionActivity", "Skipping welcome screen, proceeding directly to MainActivity")
-                proceedToMainActivity()
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error in location permission monitoring", e)
+            } finally {
+                isWaitingForLocationSettings = false
+                Log.d("PermissionActivity", "Location permission monitoring ended")
             }
-        } else {
-            // Find first non-granted permission
-            val firstDeniedIndex = permissionSteps.indexOfFirst { !it.isGranted }
-
-            // Only update current step if we're not processing a permission
-            if (!isProcessingPermission) {
-                currentStepIndex = firstDeniedIndex
-                Log.d("PermissionActivity", "MANDATORY permission missing - Current step: $currentStepIndex (${permissionSteps[currentStepIndex].title})")
-            }
-            showWelcomeScreen = false
-            isCheckingPermissions = false
         }
     }
 
-    private fun getPermissionTypeForIndex(index: Int): PermissionType {
-        return when (index) {
-            0 -> PermissionType.LOCATION
-            1 -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    PermissionType.BACKGROUND_LOCATION
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    PermissionType.NOTIFICATION
-                } else {
-                    PermissionType.CAMERA
+    private fun startBackgroundLocationPermissionMonitoring() {
+        isWaitingForBackgroundLocationSettings = true
+        Log.d("PermissionActivity", "Starting background location permission monitoring")
+
+        permissionMonitoringJob?.cancel()
+        permissionMonitoringJob = lifecycleScope.launch {
+            try {
+                withTimeoutOrNull(MAX_MONITORING_TIME) {
+                    var elapsedTime = 0L
+
+                    while (isWaitingForBackgroundLocationSettings && elapsedTime < MAX_MONITORING_TIME) {
+                        delay(PERMISSION_CHECK_INTERVAL)
+                        elapsedTime += PERMISSION_CHECK_INTERVAL
+
+                        val isGranted = checkBackgroundLocationPermission()
+                        Log.d("PermissionActivity", "Monitoring background location permission - Elapsed: ${elapsedTime}ms, Granted: $isGranted")
+
+                        if (isGranted) {
+                            Log.d("PermissionActivity", "Background location permission granted detected!")
+                            isWaitingForBackgroundLocationSettings = false
+                            val stepIndex = findStepIndexByType(PermissionType.BACKGROUND_LOCATION)
+                            handlePermissionResult(stepIndex, true)
+                            return@withTimeoutOrNull
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error in background location permission monitoring", e)
+            } finally {
+                isWaitingForBackgroundLocationSettings = false
+                Log.d("PermissionActivity", "Background location permission monitoring ended")
             }
-            2 -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    PermissionType.NOTIFICATION
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    PermissionType.CAMERA
-                } else {
-                    PermissionType.BATTERY_OPTIMIZATION
+        }
+    }
+
+    private fun startNotificationPermissionMonitoring() {
+        isWaitingForNotificationSettings = true
+        Log.d("PermissionActivity", "Starting notification permission monitoring")
+
+        permissionMonitoringJob?.cancel()
+        permissionMonitoringJob = lifecycleScope.launch {
+            try {
+                withTimeoutOrNull(MAX_MONITORING_TIME) {
+                    var elapsedTime = 0L
+
+                    while (isWaitingForNotificationSettings && elapsedTime < MAX_MONITORING_TIME) {
+                        delay(PERMISSION_CHECK_INTERVAL)
+                        elapsedTime += PERMISSION_CHECK_INTERVAL
+
+                        val isGranted = checkNotificationPermission()
+                        Log.d("PermissionActivity", "Monitoring notification permission - Elapsed: ${elapsedTime}ms, Granted: $isGranted")
+
+                        if (isGranted) {
+                            Log.d("PermissionActivity", "Notification permission granted detected!")
+                            isWaitingForNotificationSettings = false
+                            val stepIndex = findStepIndexByType(PermissionType.NOTIFICATION)
+                            handlePermissionResult(stepIndex, true)
+                            return@withTimeoutOrNull
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error in notification permission monitoring", e)
+            } finally {
+                isWaitingForNotificationSettings = false
+                Log.d("PermissionActivity", "Notification permission monitoring ended")
             }
-            3 -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    PermissionType.CAMERA
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    PermissionType.BATTERY_OPTIMIZATION
-                } else {
-                    PermissionType.BATTERY_OPTIMIZATION
+        }
+    }
+
+    private fun startCameraPermissionMonitoring() {
+        isWaitingForCameraSettings = true
+        Log.d("PermissionActivity", "Starting camera permission monitoring")
+
+        permissionMonitoringJob?.cancel()
+        permissionMonitoringJob = lifecycleScope.launch {
+            try {
+                withTimeoutOrNull(MAX_MONITORING_TIME) {
+                    var elapsedTime = 0L
+
+                    while (isWaitingForCameraSettings && elapsedTime < MAX_MONITORING_TIME) {
+                        delay(PERMISSION_CHECK_INTERVAL)
+                        elapsedTime += PERMISSION_CHECK_INTERVAL
+
+                        val isGranted = checkCameraPermission()
+                        Log.d("PermissionActivity", "Monitoring camera permission - Elapsed: ${elapsedTime}ms, Granted: $isGranted")
+
+                        if (isGranted) {
+                            Log.d("PermissionActivity", "Camera permission granted detected!")
+                            isWaitingForCameraSettings = false
+                            val stepIndex = findStepIndexByType(PermissionType.CAMERA)
+                            handlePermissionResult(stepIndex, true)
+                            return@withTimeoutOrNull
+                        }
+                    }
                 }
-            }
-            4 -> PermissionType.BATTERY_OPTIMIZATION
-            else -> PermissionType.LOCATION
-        }
-    }
-
-    private fun findStepIndexByType(type: PermissionType): Int {
-        return permissionSteps.indexOfFirst { step ->
-            when (type) {
-                PermissionType.LOCATION -> step.title == "Location Access"
-                PermissionType.BACKGROUND_LOCATION -> step.title == "Background Location"
-                PermissionType.NOTIFICATION -> step.title == "Notifications"
-                PermissionType.CAMERA -> step.title == "Camera Access"
-                PermissionType.BATTERY_OPTIMIZATION -> step.title == "Battery Optimization"
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error in camera permission monitoring", e)
+            } finally {
+                isWaitingForCameraSettings = false
+                Log.d("PermissionActivity", "Camera permission monitoring ended")
             }
         }
     }
 
-    private fun handlePermissionResult(stepIndex: Int, granted: Boolean) {
-        isProcessingPermission = false
-        Log.d("PermissionActivity", "MANDATORY permission result for step $stepIndex: $granted")
+    private fun startBatteryOptimizationMonitoring() {
+        isWaitingForBatterySettings = true
+        Log.d("PermissionActivity", "Starting battery optimization monitoring")
 
-        // Update the specific step
-        if (stepIndex >= 0 && stepIndex < permissionSteps.size) {
-            permissionSteps = permissionSteps.toMutableList().apply {
-                this[stepIndex] = this[stepIndex].copy(isGranted = granted)
+        permissionMonitoringJob?.cancel()
+        permissionMonitoringJob = lifecycleScope.launch {
+            try {
+                withTimeoutOrNull(MAX_MONITORING_TIME) {
+                    var elapsedTime = 0L
+
+                    while (isWaitingForBatterySettings && elapsedTime < MAX_MONITORING_TIME) {
+                        delay(PERMISSION_CHECK_INTERVAL)
+                        elapsedTime += PERMISSION_CHECK_INTERVAL
+
+                        val isOptimizationDisabled = checkBatteryOptimization()
+                        Log.d("PermissionActivity", "Monitoring battery optimization - Elapsed: ${elapsedTime}ms, Disabled: $isOptimizationDisabled")
+
+                        if (isOptimizationDisabled) {
+                            Log.d("PermissionActivity", "Battery optimization disabled detected!")
+                            isWaitingForBatterySettings = false
+                            val stepIndex = findStepIndexByType(PermissionType.BATTERY_OPTIMIZATION)
+                            handlePermissionResult(stepIndex, true)
+                            return@withTimeoutOrNull
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error in battery optimization monitoring", e)
+            } finally {
+                isWaitingForBatterySettings = false
+                Log.d("PermissionActivity", "Battery optimization monitoring ended")
             }
         }
-
-        if (!granted) {
-            Log.w("PermissionActivity", "MANDATORY permission denied for step $stepIndex - user must grant to continue")
-        }
-
-        // Always recheck all permissions after any permission result
-        checkAllPermissions()
     }
 
-    // FIXED: Override the requestCurrentPermission to NOT automatically open settings
-    private fun requestCurrentPermission() {
-        if (currentStepIndex >= permissionSteps.size) {
-            Log.w("PermissionActivity", "Current step index out of bounds: $currentStepIndex")
-            return
+    private fun startComprehensivePermissionMonitoring() {
+        Log.d("PermissionActivity", "Starting comprehensive permission monitoring")
+
+        permissionMonitoringJob?.cancel()
+        permissionMonitoringJob = lifecycleScope.launch {
+            try {
+                withTimeoutOrNull(MAX_MONITORING_TIME) {
+                    var elapsedTime = 0L
+
+                    while (elapsedTime < MAX_MONITORING_TIME) {
+                        delay(PERMISSION_CHECK_INTERVAL)
+                        elapsedTime += PERMISSION_CHECK_INTERVAL
+
+                        // Check all permissions
+                        val locationGranted = checkLocationPermission()
+                        val backgroundLocationGranted = checkBackgroundLocationPermission()
+                        val notificationGranted = checkNotificationPermission()
+                        val cameraGranted = checkCameraPermission()
+                        val batteryOptimizationDisabled = checkBatteryOptimization()
+
+                        Log.d("PermissionActivity", "Comprehensive monitoring - Location: $locationGranted, Background: $backgroundLocationGranted, Notification: $notificationGranted, Camera: $cameraGranted, Battery: $batteryOptimizationDisabled")
+
+                        // Check if any permission state changed
+                        var permissionChanged = false
+
+                        val locationStepIndex = findStepIndexByType(PermissionType.LOCATION)
+                        if (locationStepIndex >= 0 && locationGranted && !permissionSteps[locationStepIndex].isGranted) {
+                            Log.d("PermissionActivity", "Location permission change detected!")
+                            permissionChanged = true
+                        }
+
+                        val backgroundStepIndex = findStepIndexByType(PermissionType.BACKGROUND_LOCATION)
+                        if (backgroundStepIndex >= 0 && backgroundLocationGranted && !permissionSteps[backgroundStepIndex].isGranted) {
+                            Log.d("PermissionActivity", "Background location permission change detected!")
+                            permissionChanged = true
+                        }
+
+                        val notificationStepIndex = findStepIndexByType(PermissionType.NOTIFICATION)
+                        if (notificationStepIndex >= 0 && notificationGranted && !permissionSteps[notificationStepIndex].isGranted) {
+                            Log.d("PermissionActivity", "Notification permission change detected!")
+                            permissionChanged = true
+                        }
+
+                        val cameraStepIndex = findStepIndexByType(PermissionType.CAMERA)
+                        if (cameraStepIndex >= 0 && cameraGranted && !permissionSteps[cameraStepIndex].isGranted) {
+                            Log.d("PermissionActivity", "Camera permission change detected!")
+                            permissionChanged = true
+                        }
+
+                        val batteryStepIndex = findStepIndexByType(PermissionType.BATTERY_OPTIMIZATION)
+                        if (batteryStepIndex >= 0 && batteryOptimizationDisabled && !permissionSteps[batteryStepIndex].isGranted) {
+                            Log.d("PermissionActivity", "Battery optimization change detected!")
+                            permissionChanged = true
+                        }
+
+                        if (permissionChanged) {
+                            // Stop all monitoring
+                            stopAllMonitoring()
+                            // Recheck all permissions
+                            checkAllPermissions()
+                            return@withTimeoutOrNull
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("PermissionActivity", "Error in comprehensive permission monitoring", e)
+            } finally {
+                stopAllMonitoring()
+                Log.d("PermissionActivity", "Comprehensive permission monitoring ended")
+            }
         }
-
-        isProcessingPermission = true
-        val currentPermissionType = getPermissionTypeForIndex(currentStepIndex)
-        Log.d("PermissionActivity", "Requesting MANDATORY permission: $currentPermissionType (force: $forcePermissionRequest)")
-
-        // Don't automatically detect dialog or open settings
-        when (currentPermissionType) {
-            PermissionType.LOCATION -> requestLocationPermissions()
-            PermissionType.BACKGROUND_LOCATION -> requestBackgroundLocationPermission()
-            PermissionType.NOTIFICATION -> requestNotificationPermission()
-            PermissionType.CAMERA -> requestCameraPermission()
-            PermissionType.BATTERY_OPTIMIZATION -> requestBatteryOptimizationDisable()
-        }
-
-        // Reset force flag
-        forcePermissionRequest = false
     }
 
-    // FIXED: Enhanced retry mechanism - only retry permission request
-    private fun retryPermissionRequest() {
-        Log.d("PermissionActivity", "Force retrying permission request for step $currentStepIndex")
-
-        // Reset processing state
-        isProcessingPermission = false
-        stopAllMonitoring()
-
-        lifecycleScope.launch {
-            // Always just retry the normal permission request
-            delay(300)
-            forcePermissionRequest = true
-            requestCurrentPermission()
-        }
+    private fun stopAllMonitoring() {
+        isWaitingForLocationSettings = false
+        isWaitingForNotificationSettings = false
+        isWaitingForCameraSettings = false
+        isWaitingForBatterySettings = false
+        isWaitingForBackgroundLocationSettings = false
+        permissionMonitoringJob?.cancel()
+        Log.d("PermissionActivity", "All permission monitoring stopped")
     }
 
     // Permission checking functions
@@ -832,19 +1012,32 @@ class PermissionActivity : ComponentActivity() {
         } else true
     }
 
-    // FIXED: Force permission request methods - with auto-monitoring
+    // Enhanced permission request methods with device-specific handling
     private fun requestLocationPermissions() {
-        Log.d("PermissionActivity", "Requesting MANDATORY location permissions (attempt ${(permissionRequestCount[Manifest.permission.ACCESS_FINE_LOCATION] ?: 0) + 1})")
+        val deviceInfo = getDeviceInfo()
+        val isProblematic = isKnownProblematicDevice()
+
+        Log.d("PermissionActivity", "Requesting location permissions on: $deviceInfo (Problematic: $isProblematic)")
+
+        if (isProblematic) {
+            // For problematic devices, start monitoring immediately
+            lifecycleScope.launch {
+                delay(2000) // Give some time for dialog to appear
+                if (isProcessingPermission && !checkLocationPermission()) {
+                    Log.w("PermissionActivity", "Problematic device detected, starting early monitoring")
+                    startLocationPermissionMonitoring()
+                }
+            }
+        }
 
         try {
-            // Always try to launch the permission request
             requestLocationPermissionsLauncher.launch(arrayOf(
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ))
         } catch (e: Exception) {
-            Log.e("PermissionActivity", "Failed to launch location permission request", e)
-            // If the launcher fails, start monitoring anyway
+            Log.e("PermissionActivity", "Failed to launch location permission request on $deviceInfo", e)
+            isProcessingPermission = false
             startLocationPermissionMonitoring()
         }
     }
@@ -865,7 +1058,7 @@ class PermissionActivity : ComponentActivity() {
                 requestBackgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             } catch (e: Exception) {
                 Log.e("PermissionActivity", "Failed to launch background location permission request", e)
-                // If the launcher fails, start monitoring anyway
+                isProcessingPermission = false
                 startBackgroundLocationPermissionMonitoring()
             }
         } else {
@@ -882,7 +1075,7 @@ class PermissionActivity : ComponentActivity() {
                 requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } catch (e: Exception) {
                 Log.e("PermissionActivity", "Failed to launch notification permission request", e)
-                // If the launcher fails, start monitoring anyway
+                isProcessingPermission = false
                 startNotificationPermissionMonitoring()
             }
         } else {
@@ -898,7 +1091,7 @@ class PermissionActivity : ComponentActivity() {
             requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         } catch (e: Exception) {
             Log.e("PermissionActivity", "Failed to launch camera permission request", e)
-            // If the launcher fails, start monitoring anyway
+            isProcessingPermission = false
             startCameraPermissionMonitoring()
         }
     }
@@ -918,7 +1111,7 @@ class PermissionActivity : ComponentActivity() {
                     batteryOptimizationLauncher.launch(intent)
                 } catch (e2: Exception) {
                     Log.e("PermissionActivity", "Both battery optimization requests failed", e2)
-                    // Start monitoring anyway
+                    isProcessingPermission = false
                     startBatteryOptimizationMonitoring()
                 }
             }
@@ -928,15 +1121,41 @@ class PermissionActivity : ComponentActivity() {
         }
     }
 
+    // Device-specific settings intent
     private fun openAppSettings() {
+        if (isProcessingPermission) {
+            Log.w("PermissionActivity", "Settings launch already in progress")
+            return
+        }
+
+        isProcessingPermission = true
+
         try {
-            Log.d("PermissionActivity", "Opening app settings for MANDATORY permissions")
+            Log.d("PermissionActivity", "Opening app settings on: ${getDeviceInfo()}")
+
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                 data = Uri.parse("package:$packageName")
+                // Add flags for better compatibility
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
-            appSettingsLauncher.launch(intent)
+
+            // Check if the intent can be resolved
+            if (intent.resolveActivity(packageManager) != null) {
+                appSettingsLauncher.launch(intent)
+            } else {
+                // Fallback for devices that don't support the standard intent
+                Log.w("PermissionActivity", "Standard settings intent not available, trying fallback")
+                val fallbackIntent = Intent(Settings.ACTION_SETTINGS)
+                if (fallbackIntent.resolveActivity(packageManager) != null) {
+                    appSettingsLauncher.launch(fallbackIntent)
+                } else {
+                    Log.e("PermissionActivity", "No settings intent available on this device")
+                    isProcessingPermission = false
+                }
+            }
         } catch (e: Exception) {
-            Log.e("PermissionActivity", "Failed to open app settings", e)
+            Log.e("PermissionActivity", "Failed to open app settings on ${getDeviceInfo()}", e)
+            isProcessingPermission = false
         }
     }
 
@@ -964,8 +1183,87 @@ class PermissionActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         stopAllMonitoring()
+        stuckStateCheckJob?.cancel()
         Log.d("PermissionActivity", "Permission activity destroyed")
     }
+}
+
+// IMPROVED: Exit confirmation dialog component with accessibility
+@Composable
+fun ExitConfirmationDialog(
+    onConfirmExit: () -> Unit,
+    onContinue: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onContinue,
+        title = {
+            Text(
+                text = "Exit ZooBox?",
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0077B6),
+                modifier = Modifier.semantics {
+                    contentDescription = "Exit ZooBox app confirmation dialog"
+                }
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.semantics {
+                    contentDescription = "Explanation that all permissions are required for app functionality"
+                }
+            ) {
+                Text(
+                    text = "All permissions are required for ZooBox to function properly.",
+                    color = Color(0xFF333333)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Without these permissions, the app cannot provide delivery tracking, notifications, or photo capture functionality.",
+                    color = Color(0xFF666666),
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Would you like to exit the app or continue with permission setup?",
+                    color = Color(0xFF666666),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmExit,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFE53E3E)
+                ),
+                modifier = Modifier.semantics {
+                    contentDescription = "Exit app and close ZooBox completely"
+                }
+            ) {
+                Text("Exit App", color = Color.White)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onContinue,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFF0077B6)
+                ),
+                border = BorderStroke(1.dp, Color(0xFF0077B6)),
+                modifier = Modifier.semantics {
+                    contentDescription = "Continue with permission setup process"
+                }
+            ) {
+                Text("Continue Setup")
+            }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.semantics {
+            contentDescription = "Dialog asking whether to exit app or continue with required permissions"
+        }
+    )
 }
 
 // Helper functions for responsive design
@@ -1075,12 +1373,15 @@ fun WelcomeScreen(
                         modifier = Modifier
                             .size(getResponsiveIconSize(100.dp))
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.2f)),
+                            .background(Color.White.copy(alpha = 0.2f))
+                            .semantics {
+                                contentDescription = "Success checkmark indicating all permissions granted"
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
+                            contentDescription = "Success checkmark",
                             tint = Color.White,
                             modifier = Modifier.size(getResponsiveIconSize(70.dp))
                         )
@@ -1107,7 +1408,7 @@ fun WelcomeScreen(
                 ) {
                     // Description
                     Text(
-                        text = "All required permissions have been granted successfully. ZooBox Hero is ready to provide you with the best delivery experience!",
+                        text = "All required permissions have been granted successfully. ZooBox is ready to provide you with the best delivery experience!",
                         fontSize = getResponsiveTextSize(16).sp,
                         color = Color.White.copy(alpha = 0.9f),
                         textAlign = TextAlign.Center,
@@ -1122,7 +1423,10 @@ fun WelcomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(getResponsiveButtonHeight())
-                            .scale(scale),
+                            .scale(scale)
+                            .semantics {
+                                contentDescription = "Welcome to ZooBox button. Tap to start using the app."
+                            },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.White
                         ),
@@ -1133,13 +1437,13 @@ fun WelcomeScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.ArrowForward,
-                            contentDescription = null,
+                            contentDescription = "Arrow forward icon",
                             tint = Color(0xFF0077B6),
                             modifier = Modifier.size(getResponsiveIconSize(20.dp))
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Welcome to ZooBox Hero",
+                            text = "Welcome to ZooBox",
                             fontSize = getResponsiveTextSize(16).sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF0077B6)
@@ -1174,12 +1478,15 @@ fun WelcomeScreen(
                     modifier = Modifier
                         .size(getResponsiveIconSize(120.dp))
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.2f)),
+                        .background(Color.White.copy(alpha = 0.2f))
+                        .semantics {
+                            contentDescription = "Success checkmark indicating all permissions granted"
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
+                        contentDescription = "Success checkmark",
                         tint = Color.White,
                         modifier = Modifier.size(getResponsiveIconSize(80.dp))
                     )
@@ -1200,7 +1507,7 @@ fun WelcomeScreen(
 
                 // Description
                 Text(
-                    text = "All required permissions have been granted successfully. ZooBox Hero is ready to provide you with the best delivery experience!",
+                    text = "All required permissions have been granted successfully. ZooBox is ready to provide you with the best delivery experience!",
                     fontSize = getResponsiveTextSize(16).sp,
                     color = Color.White.copy(alpha = 0.9f),
                     textAlign = TextAlign.Center,
@@ -1216,7 +1523,10 @@ fun WelcomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(getResponsiveButtonHeight())
-                        .scale(scale),
+                        .scale(scale)
+                        .semantics {
+                            contentDescription = "Welcome to ZooBox button. Tap to start using the app."
+                        },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.White
                     ),
@@ -1227,13 +1537,13 @@ fun WelcomeScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.ArrowForward,
-                        contentDescription = null,
+                        contentDescription = "Arrow forward icon",
                         tint = Color(0xFF0077B6),
                         modifier = Modifier.size(getResponsiveIconSize(20.dp))
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Welcome to ZooBox Hero",
+                        text = "Welcome to ZooBox",
                         fontSize = getResponsiveTextSize(16).sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF0077B6)
@@ -1256,12 +1566,14 @@ fun WelcomeScreen(
     }
 }
 
+// IMPROVED: Permission screen with better responsiveness and state handling
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun BeautifulPermissionScreen(
     steps: List<PermissionActivity.PermissionStep>,
     currentStep: Int,
     isCheckingPermissions: Boolean,
+    isProcessingPermission: Boolean, // NEW: Added processing state
     onGrantPermission: () -> Unit,
     onOpenSettings: () -> Unit,
     onRetryPermission: () -> Unit,
@@ -1317,7 +1629,11 @@ fun BeautifulPermissionScreen(
                 CircularProgressIndicator(
                     color = Color.White,
                     strokeWidth = 4.dp,
-                    modifier = Modifier.size(getResponsiveIconSize(50.dp))
+                    modifier = Modifier
+                        .size(getResponsiveIconSize(50.dp))
+                        .semantics {
+                            contentDescription = "Checking permissions, please wait"
+                        }
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
@@ -1356,7 +1672,7 @@ fun BeautifulPermissionScreen(
                         )
 
                         Text(
-                            text = "All permissions are mandatory for ZooBox Hero",
+                            text = "All permissions are mandatory for ZooBox",
                             fontSize = getResponsiveTextSize(14).sp,
                             color = Color.White.copy(alpha = 0.9f),
                             textAlign = TextAlign.Center,
@@ -1394,6 +1710,7 @@ fun BeautifulPermissionScreen(
                                 step = steps[currentStep],
                                 stepNumber = currentStep + 1,
                                 totalSteps = steps.size,
+                                isProcessingPermission = isProcessingPermission,
                                 onGrantPermission = onGrantPermission,
                                 onOpenSettings = onOpenSettings,
                                 onRetryPermission = onRetryPermission,
@@ -1428,7 +1745,7 @@ fun BeautifulPermissionScreen(
                     )
 
                     Text(
-                        text = "All permissions are mandatory for ZooBox Hero",
+                        text = "All permissions are mandatory for ZooBox",
                         fontSize = getResponsiveTextSize(14).sp,
                         color = Color.White.copy(alpha = 0.9f),
                         textAlign = TextAlign.Center,
@@ -1451,6 +1768,7 @@ fun BeautifulPermissionScreen(
                             step = steps[currentStep],
                             stepNumber = currentStep + 1,
                             totalSteps = steps.size,
+                            isProcessingPermission = isProcessingPermission,
                             onGrantPermission = onGrantPermission,
                             onOpenSettings = onOpenSettings,
                             onRetryPermission = onRetryPermission,
@@ -1478,11 +1796,13 @@ fun BeautifulPermissionScreen(
     }
 }
 
+// IMPROVED: Current permission card with comprehensive accessibility and state handling
 @Composable
 fun CurrentPermissionCard(
     step: PermissionActivity.PermissionStep,
     stepNumber: Int,
     totalSteps: Int,
+    isProcessingPermission: Boolean, // NEW: Added processing state
     onGrantPermission: () -> Unit,
     onOpenSettings: () -> Unit,
     onRetryPermission: () -> Unit,
@@ -1518,7 +1838,10 @@ fun CurrentPermissionCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .scale(scale),
+            .scale(scale)
+            .semantics {
+                contentDescription = "Permission step $stepNumber of $totalSteps: ${step.title}. ${step.description}. This permission is required."
+            },
         shape = RoundedCornerShape(if (isSmallScreen) 16.dp else 24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
@@ -1533,12 +1856,15 @@ fun CurrentPermissionCard(
                     .size(getResponsiveIconSize(70.dp))
                     .clip(CircleShape)
                     .background(Color(0xFF0077B6).copy(alpha = 0.1f))
-                    .border(2.dp, Color(0xFFE53E3E), CircleShape),
+                    .border(2.dp, Color(0xFFE53E3E), CircleShape)
+                    .semantics {
+                        contentDescription = "${step.title} permission icon"
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = step.icon,
-                    contentDescription = null,
+                    contentDescription = "${step.title} permission",
                     tint = Color(0xFF0077B6),
                     modifier = Modifier.size(getResponsiveIconSize(35.dp))
                 )
@@ -1586,6 +1912,48 @@ fun CurrentPermissionCard(
                 lineHeight = getResponsiveTextSize(16).sp
             )
 
+            // Show processing state
+            if (isProcessingPermission && !isWaitingForSettings) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFE3F2FD)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .semantics {
+                                    contentDescription = "Processing permission request"
+                                },
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF2196F3)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Processing Request...",
+                                fontSize = getResponsiveTextSize(12).sp,
+                                color = Color(0xFF1976D2),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Please wait while we request permission",
+                                fontSize = getResponsiveTextSize(10).sp,
+                                color = Color(0xFF1976D2),
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
             // Show monitoring status
             if (isWaitingForSettings) {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1601,7 +1969,11 @@ fun CurrentPermissionCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier
+                                .size(20.dp)
+                                .semantics {
+                                    contentDescription = "Auto-detection in progress"
+                                },
                             strokeWidth = 2.dp,
                             color = Color(0xFF4CAF50)
                         )
@@ -1666,40 +2038,71 @@ fun CurrentPermissionCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Grant button - more prominent for mandatory permissions
+            // IMPROVED: Button states with better responsiveness and accessibility
             if (!isWaitingForSettings) {
                 Button(
                     onClick = onGrantPermission,
+                    enabled = !isProcessingPermission, // Disable when processing
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(getResponsiveButtonHeight()),
+                        .height(getResponsiveButtonHeight())
+                        .semantics {
+                            contentDescription = if (isProcessingPermission) {
+                                "Processing ${step.title} permission request"
+                            } else {
+                                "Grant ${step.title} permission. This is required for app functionality."
+                            }
+                        },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE53E3E)
+                        containerColor = if (isProcessingPermission) Color(0xFFE53E3E).copy(alpha = 0.7f) else Color(0xFFE53E3E),
+                        disabledContainerColor = Color(0xFFE53E3E).copy(alpha = 0.5f)
                     ),
                     shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 16.dp)
                 ) {
-                    Icon(
-                        Icons.Default.Security,
-                        contentDescription = null,
-                        modifier = Modifier.size(getResponsiveIconSize(18.dp))
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (permissionAttempts > 0) "Try Again (Required)" else if (isSmallScreen) "Grant Permission" else "Grant Required Permission",
-                        fontSize = getResponsiveTextSize(14).sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (isProcessingPermission) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(getResponsiveIconSize(16.dp))
+                                .semantics {
+                                    contentDescription = "Processing permission request"
+                                },
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Processing...",
+                            fontSize = getResponsiveTextSize(14).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Security,
+                            contentDescription = "Security icon",
+                            modifier = Modifier.size(getResponsiveIconSize(18.dp))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (permissionAttempts > 0) "Try Again (Required)" else if (isSmallScreen) "Grant Permission" else "Grant Required Permission",
+                            fontSize = getResponsiveTextSize(14).sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 // Add retry button for persistent requests
-                if (permissionAttempts > 0) {
+                if (permissionAttempts > 0 && !isProcessingPermission) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedButton(
                         onClick = onRetryPermission,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(getResponsiveButtonHeight() * 0.8f),
+                            .height(getResponsiveButtonHeight() * 0.8f)
+                            .semantics {
+                                contentDescription = "Force retry ${step.title} permission request. Attempt number ${permissionAttempts + 1}."
+                            },
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = Color(0xFFFF5722)
                         ),
@@ -1708,7 +2111,7 @@ fun CurrentPermissionCard(
                     ) {
                         Icon(
                             Icons.Default.Refresh,
-                            contentDescription = null,
+                            contentDescription = "Retry icon",
                             modifier = Modifier.size(getResponsiveIconSize(16.dp))
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -1728,7 +2131,10 @@ fun CurrentPermissionCard(
                     enabled = false,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(getResponsiveButtonHeight()),
+                        .height(getResponsiveButtonHeight())
+                        .semantics {
+                            contentDescription = "Auto-detecting ${step.title} permission changes. Please grant the permission in your device settings."
+                        },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF4CAF50),
                         disabledContainerColor = Color(0xFF4CAF50).copy(alpha = 0.7f)
@@ -1736,7 +2142,11 @@ fun CurrentPermissionCard(
                     shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 16.dp)
                 ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(getResponsiveIconSize(16.dp)),
+                        modifier = Modifier
+                            .size(getResponsiveIconSize(16.dp))
+                            .semantics {
+                                contentDescription = "Auto-detection in progress"
+                            },
                         strokeWidth = 2.dp,
                         color = Color.White
                     )
@@ -1756,17 +2166,22 @@ fun CurrentPermissionCard(
             if (permissionAttempts >= 2) {
                 Button(
                     onClick = onOpenSettings,
+                    enabled = !isProcessingPermission, // Disable when processing
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(getResponsiveButtonHeight() * 0.9f),
+                        .height(getResponsiveButtonHeight() * 0.9f)
+                        .semantics {
+                            contentDescription = "Open app settings to manually grant ${step.title} permission. The app will auto-detect when you grant it."
+                        },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF2196F3)
+                        containerColor = Color(0xFF2196F3),
+                        disabledContainerColor = Color(0xFF2196F3).copy(alpha = 0.5f)
                     ),
                     shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 16.dp)
                 ) {
                     Icon(
                         Icons.Default.Settings,
-                        contentDescription = null,
+                        contentDescription = "Settings icon",
                         modifier = Modifier.size(getResponsiveIconSize(16.dp))
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -1780,20 +2195,24 @@ fun CurrentPermissionCard(
             } else if (!isWaitingForSettings) {
                 TextButton(
                     onClick = onOpenSettings,
+                    enabled = !isProcessingPermission, // Disable when processing
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(if (isSmallScreen) 40.dp else 48.dp)
+                        .semantics {
+                            contentDescription = "Open app settings as alternative way to grant ${step.title} permission"
+                        }
                 ) {
                     Icon(
                         Icons.Default.Settings,
-                        contentDescription = null,
+                        contentDescription = "Settings icon",
                         modifier = Modifier.size(getResponsiveIconSize(14.dp))
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Open App Settings",
                         fontSize = getResponsiveTextSize(12).sp,
-                        color = Color(0xFF0077B6)
+                        color = if (isProcessingPermission) Color(0xFF0077B6).copy(alpha = 0.5f) else Color(0xFF0077B6)
                     )
                 }
             }
@@ -1819,7 +2238,10 @@ fun PermissionStepsOverview(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 3.dp),
+                    .padding(vertical = 3.dp)
+                    .semantics {
+                        contentDescription = "Permission ${index + 1}: ${step.title}. Status: ${if (step.isGranted) "Granted" else if (index == currentStep) "Current step" else "Pending"}"
+                    },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -1828,7 +2250,11 @@ fun PermissionStepsOverview(
                         index == currentStep -> Icons.Default.Error
                         else -> Icons.Default.Circle
                     },
-                    contentDescription = null,
+                    contentDescription = when {
+                        step.isGranted -> "Permission granted"
+                        index == currentStep -> "Current permission required"
+                        else -> "Permission pending"
+                    },
                     tint = when {
                         step.isGranted -> Color(0xFF4CAF50)
                         index == currentStep -> Color(0xFFFFD700)
@@ -1865,7 +2291,11 @@ fun PermissionProgressIndicator(
     if (isSmallScreen && steps.size > 3) {
         // Vertical progress for small screens with many steps
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentDescription = "Permission progress: step ${currentStep + 1} of ${steps.size}"
+                },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             steps.forEachIndexed { index, step ->
@@ -1888,13 +2318,16 @@ fun PermissionProgressIndicator(
                             width = if (isCurrent) 2.dp else 0.dp,
                             color = Color.White,
                             shape = CircleShape
-                        ),
+                        )
+                        .semantics {
+                            contentDescription = "Step ${index + 1}: ${step.title}. ${if (isCompleted) "Completed" else if (isCurrent) "Current" else "Pending"}"
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     when {
                         isCompleted -> Icon(
                             Icons.Default.Check,
-                            contentDescription = null,
+                            contentDescription = "Completed",
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
@@ -1930,7 +2363,11 @@ fun PermissionProgressIndicator(
     } else {
         // Horizontal progress for normal screens
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentDescription = "Permission progress: step ${currentStep + 1} of ${steps.size}"
+                },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1954,13 +2391,16 @@ fun PermissionProgressIndicator(
                             width = if (isCurrent) 2.dp else 0.dp,
                             color = Color.White,
                             shape = CircleShape
-                        ),
+                        )
+                        .semantics {
+                            contentDescription = "Step ${index + 1}: ${step.title}. ${if (isCompleted) "Completed" else if (isCurrent) "Current" else "Pending"}"
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     when {
                         isCompleted -> Icon(
                             Icons.Default.Check,
-                            contentDescription = null,
+                            contentDescription = "Completed",
                             tint = Color.White,
                             modifier = Modifier.size(getResponsiveIconSize(20.dp))
                         )

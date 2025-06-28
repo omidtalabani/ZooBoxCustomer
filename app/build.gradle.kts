@@ -13,8 +13,8 @@ android {
         applicationId = "com.zoobox.customer"
         minSdk = 26
         targetSdk = 34 // Use 34 for Play Store publishing. Use 35 ONLY if Android 15 is stable and Play Store allows it.
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
